@@ -2,23 +2,15 @@
 
 int main(int argc, char *argv[])
 {
-
-	int sockfd;
-
-	if(argc != 3){
-    	fprintf(stderr, "Usage: server hostname port\n");
+    if(argc != 1)
+    {
+    	fprintf(stderr, "Usage: ./server port\n");
     	exit(1);
   	}
 
-	char *hostname = argv[1];
 	int port = atoi(argv[2]);
-    
-    if((sockfd = open_server(hostname, port)) < 0)
-	{
-		///log error
-	}
 
-	close_server(sockfd);
+    printf("COMM INIT %d\n", comm_init(port));
 
 	return 0;
 }

@@ -23,6 +23,12 @@ typedef struct frame {
     char user[MAXIDSIZE];
 } Frame;
 
+typedef struct textMessage {
+    int SenderId;
+    int RecepientId;
+    char buffer[BUFFER_SIZE];
+} TextMessage;
+
 void send_file();
 
 void receive_file();

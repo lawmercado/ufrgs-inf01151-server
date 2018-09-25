@@ -102,7 +102,7 @@ int __send_packet(int *id_msg, char *buffer, int sockfd, struct sockaddr_in *ser
 
 }
 
-int __receive_packet(int *id_msg, char *buffer, int sockfd, struct sockaddr_in *serv){
+int __receive_packet(TextMessage *newMsg, int sockfd, struct sockaddr_in *serv){
 
 	/*
 	ssize_t sendto (
@@ -113,22 +113,15 @@ int __receive_packet(int *id_msg, char *buffer, int sockfd, struct sockaddr_in *
 		const struct sockaddr *to > pointer to a sockaddr object that specifies the addess of the target
 		socklen_t tolen 	=> object that specifies the size of the target
 	)
-
-	struct Frame {
-    	int id_msg;
-    	int ack;
-    	char buffer[256];
-    	char user[25];
-	};
 	*/
 
-	Frame packet;
 	int status = 0;
+	int ack = 0;
 
 	socklen_t fromlen = sizeof(struct sockaddr_in);
 
 	do{
-		status = recvfrom(sockfd, &packet, sizeof(packet), 0, (struct sockaddr *) serv, &fromlen);
+		status = recvfrom(sockfd, newMsg, sizeof(*newMsg), 0, (struct sockaddr *) serv, &fromlen);
 		if(status < 0){
 			printf("\n[Error recvfrom]: Receiving packet fault!\n");
 			return -1;
@@ -137,26 +130,23 @@ int __receive_packet(int *id_msg, char *buffer, int sockfd, struct sockaddr_in *
 			printf("\n[Recvfrom ok]: Receiving packet: socket id: %d, msg id: !\n", sockfd);
 		}
 
-		if(packet.id_msg == *id_msg){
-			packet.ack = 1;
-		}
-
-		status = sendto(sockfd, &packet, sizeof(packet), 0, (const struct sockaddr *) serv, sizeof(struct sockaddr_in));
-		if(status < 2){
+		if(sendto(sockfd, &newMsg, sizeof(newMsg), 0, (const struct sockaddr *) serv, sizeof(struct sockaddr_in)) < 2){
 
 			printf("\n[Error sendto]: Sending ack fault!\n");
 			return -2;
 		}
+		else
+		{
+			printf("\n[Sendto ok]: Sending ack: socket id: %d!\n", sockfd);
+		}
 
-		packet.ack = 1;
+		ack = 1;
 	}
-	while(packet.ack != 1);
+	while(ack != 1);
 
-	printf("Got an ack: %s\n", buffer);
+	printf("Got an ack: %s\n", newMsg->buffer);
 	
 
-	*id_msg = *id_msg +1;
-	memcpy(buffer, packet.buffer, BUFFER_SIZE);
 	return 0;
 
 }	
@@ -166,17 +156,17 @@ int wait_connection(char *hostname, int port, int sockfd)
 	struct sockaddr_in cli_sock;
 	socklen_t clilen;
 	int msg_counter;
-	char buffer[BUFFER_SIZE];
-	
+
+
+	TextMessage newMsg;
 
 	clilen = sizeof(struct sockaddr_in);
 	
 	while (1) {
 
-		bzero(buffer, BUFFER_SIZE);
-		msg_counter = 0;
+		bzero(newMsg.buffer, BUFFER_SIZE);
 
-		if(__receive_packet(&msg_counter, buffer, sockfd, &cli_sock) < 0)
+		if(__receive_packet(&newMsg, sockfd, &cli_sock) < 0)
 		{
 			/// error
 			printf("ERROR on recvfrom");
@@ -184,41 +174,10 @@ int wait_connection(char *hostname, int port, int sockfd)
 		}
 		else
 		{
-			printf("Received a datagram: %s\n", buffer);
-
-			if(strcmp(buffer, "CLIENT COMMUNICATION") == 0)
-			{
-				bzero(buffer, BUFFER_SIZE-1);
-				msg_counter = 0;
-				if(__receive_packet(&msg_counter, buffer, sockfd, &cli_sock) < 0)
-				{
-					printf("ERROR on recvfrom");
-					exit(1);
-				}
-				else
-				{
-					printf("\nClient id: %s\n", buffer);
-
-					bzero(buffer, BUFFER_SIZE-1);
-					msg_counter = 0;
-					if(__send_packet(&msg_counter, buffer, sockfd, &cli_sock) < 0)
-					{
-						printf("ERROR on send");
-						exit(1);
-					}
-					else
-					{
-						printf("\nSend datagram");
-						
-					}
-				}
-
-				
-			}
+			printf("Received a datagram: %s\n", newMsg.buffer);
 		}
 
 	}
 
-	printf("WAITING!!!");
 	return 0;
 }

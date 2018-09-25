@@ -1,3 +1,4 @@
+#include <poll.h>
 #include "comm.h"
 #include "log.h"
 
@@ -157,187 +158,16 @@ int wait_connection(char *hostname, int port, int sockfd)
 int __socket_instance;
 int __counter_client_port;
 
-void __init_sockaddr(struct sockaddr_in *sockaddr, int port)
-{
-    sockaddr->sin_family = AF_INET;
-	sockaddr->sin_port = htons(port);
-	sockaddr->sin_addr.s_addr = INADDR_ANY;
-	bzero((void *)&(sockaddr->sin_zero), sizeof(sockaddr->sin_zero));
-}
-
-int __send_packet(struct sockaddr_in *server_sockaddr, struct comm_packet *packet)
-{
-    int status;
-
-    status = sendto(__socket_instance, (void *)packet, sizeof(struct comm_packet), 0, (struct sockaddr *)server_sockaddr, sizeof(struct sockaddr));
-
-    if(status < 0)
-    {
-        return -1;
-    }
-
-    return 0;
-}
-
-int __receive_packet(struct sockaddr_in *server_sockaddr, struct comm_packet *packet)
-{
-    /*
-    TODO: compare this with the server address to check origin
-    char clienthost[100];
-    char clientport[100];
-    int result = getnameinfo(&from, length, clienthost, sizeof(clienthost), clientport, sizeof (clientport), NI_NUMERICHOST | NI_NUMERICSERV);
-
-    if(result == 0)
-    {
-        if (from.sa_family == AF_INET)
-            printf("Received from %s %s\n", clienthost, clientport);
-    }*/
-
-    int status;
-    struct sockaddr from;
-    socklen_t from_length;
-
-    // Receives an ack from the server
-    status = recvfrom(__socket_instance, (void *)packet, sizeof(*packet), 0, (struct sockaddr *)&from, &from_length);
-
-    if(status < 0)
-    {
-        return -1;
-    }
-
-    return 0;
-}
-
-int __send_ack(struct sockaddr_in *server_sockaddr)
-{
-    struct comm_packet packet;
-
-    packet.type = COMM_PTYPE_ACK;
-    bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
-
-    if(__send_packet(server_sockaddr, &packet) != 0)
-    {
-        log_error("comm", "Ack could not be sent");
-
-        return -1;
-    }
-
-    return 0;
-}
-
-int __receive_ack(struct sockaddr_in *server_sockaddr)
-{
-    struct comm_packet packet;
-
-    if(__receive_packet(server_sockaddr, &packet) != 0)
-    {
-        log_error("comm", "Could not receive an ack");
-
-        return -1;
-    }
-
-    if(packet.type != COMM_PTYPE_ACK)
-    {
-        log_error("comm", "The received packet is not an ack");
-
-        return -1;
-    }
-
-    return 0;
-}
-
-int __send_data(struct sockaddr_in *server_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
-{
-    struct comm_packet packet;
-
-    packet.type = COMM_PTYPE_DATA;
-    packet.length = strlen(buffer);
-    bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
-    strncpy(packet.payload, buffer, strlen(buffer));
-
-    if(__send_packet(server_sockaddr, &packet) != 0)
-    {
-        log_error("comm", "Data could not be sent");
-
-        return -1;
-    }
-
-    return __receive_ack(server_sockaddr);
-}
-
-int __receive_data(struct sockaddr_in *server_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
-{
-    struct comm_packet packet;
-
-    if(__receive_packet(server_sockaddr, &packet) != 0)
-    {
-        log_error("comm", "Could not receive the data");
-
-        return -1;
-    }
-
-    if( packet.type != COMM_PTYPE_DATA )
-    {
-        log_error("comm", "The received packet is not a data");
-
-        return -1;
-    }
-
-    bzero(buffer, COMM_PPAYLOAD_LENGTH);
-    strncpy(buffer, packet.payload, packet.length);
-
-    return __send_ack(server_sockaddr);
-}
-
-int __send_command(struct sockaddr_in *server_sockaddr, char command[COMM_PPAYLOAD_LENGTH])
-{
-    struct comm_packet packet;
-
-    packet.type = COMM_PTYPE_CMD;
-    packet.length = strlen(command);
-    bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
-    strncpy(packet.payload, command, strlen(command));
-
-    if(__send_packet(server_sockaddr, &packet) != 0)
-    {
-        log_error("comm", "Command '%s' could not be sent", command);
-
-        return -1;
-    }
-
-    return __receive_ack(server_sockaddr);
-}
-
-int __receive_command(struct sockaddr_in *server_sockaddr, char command[COMM_PPAYLOAD_LENGTH])
-{
-    struct comm_packet packet;
-
-    if(__receive_packet(server_sockaddr, &packet) != 0)
-    {
-        log_error("comm", "Could not receive the command");
-
-        return -1;
-    }
-
-    if( packet.type != COMM_PTYPE_CMD )
-    {
-        log_error("comm", "The received packet is not a command");
-
-        return -1;
-    }
-
-    bzero(command, COMM_PPAYLOAD_LENGTH);
-    strncpy(command, packet.payload, packet.length);
-
-    return __send_ack(server_sockaddr);
-}
-
-void __wait_connection()
-{
-    while(1)
-    {
-    }
-}
+void __wait_connection();
+void __init_sockaddr(struct sockaddr_in *sockaddr, int port);
+int __send_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
+int __receive_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
+int __send_ack(struct sockaddr_in *client_sockaddr);
+int __receive_ack(struct sockaddr_in *client_sockaddr);
+int __send_data(struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
+int __receive_data(struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
+int __send_command(struct sockaddr_in *client_sockaddr, char command[COMM_PPAYLOAD_LENGTH]);
+int __receive_command(struct sockaddr_in *client_sockaddr, char command[COMM_PPAYLOAD_LENGTH]);
 
 int comm_init(int port)
 {
@@ -365,4 +195,229 @@ int comm_init(int port)
     __wait_connection();
 
     return 0;
+}
+
+void __wait_connection()
+{
+    while(1)
+    {
+        char command[COMM_PPAYLOAD_LENGTH];
+        struct sockaddr_in client;
+
+        log_debug("comm", "WAITING");
+
+        log_debug("comm", "RECEIVE %d COMMAND %s", __receive_command(&client, command), command);
+    }
+}
+
+void __init_sockaddr(struct sockaddr_in *sockaddr, int port)
+{
+    sockaddr->sin_family = AF_INET;
+	sockaddr->sin_port = htons(port);
+	sockaddr->sin_addr.s_addr = INADDR_ANY;
+	bzero((void *)&(sockaddr->sin_zero), sizeof(sockaddr->sin_zero));
+}
+
+int __send_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *packet)
+{
+    int status;
+
+    status = sendto(__socket_instance, (void *)packet, sizeof(struct comm_packet), 0, (struct sockaddr *)client_sockaddr, sizeof(struct sockaddr));
+
+    perror("sendto");
+
+    log_debug("comm", "Status %d\n", status);
+
+    if(status < 0)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+int __receive_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *packet)
+{
+    /*
+    TODO: compare this with the server address to check origin
+    char clienthost[100];
+    char clientport[100];
+    int result = getnameinfo(&from, length, clienthost, sizeof(clienthost), clientport, sizeof (clientport), NI_NUMERICHOST | NI_NUMERICSERV);
+
+    if(result == 0)
+    {
+        if (from.sa_family == AF_INET)
+            printf("Received from %s %s\n", clienthost, clientport);
+    }*/
+
+    int status;
+    socklen_t from_length = sizeof(struct sockaddr_in);
+    struct pollfd fd;
+    int res;
+
+    fd.fd = __socket_instance;
+    fd.events = POLLIN;
+
+    res = poll(&fd, 1, COMM_TIMEOUT);
+
+    if(res == 0)
+    {
+        log_error("comm", "Connection timed out");
+
+        return -1;
+    }
+    else if(res == -1)
+    {
+        log_error("comm", "Polling error");
+
+        return -1;
+    }
+    else
+    {
+        // Receives an ack from the server
+        status = recvfrom(__socket_instance, (void *)packet, sizeof(*packet), 0, (struct sockaddr *)client_sockaddr, &from_length);
+
+        if(status < 0)
+        {
+            return -1;
+        }
+
+        return 0;
+    }
+}
+
+int __send_ack(struct sockaddr_in *client_sockaddr)
+{
+    log_debug("comm", "Sending ack");
+
+    struct comm_packet packet;
+
+    packet.type = COMM_PTYPE_ACK;
+    bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
+
+    if(__send_packet(client_sockaddr, &packet) != 0)
+    {
+        log_error("comm", "Ack could not be sent");
+
+        return -1;
+    }
+
+    return 0;
+}
+
+int __receive_ack(struct sockaddr_in *client_sockaddr)
+{
+    log_debug("comm", "Receiving ack");
+
+    struct comm_packet packet;
+
+    if(__receive_packet(client_sockaddr, &packet) != 0)
+    {
+        log_error("comm", "Could not receive an ack");
+
+        return -1;
+    }
+
+    if(packet.type != COMM_PTYPE_ACK)
+    {
+        log_error("comm", "The received packet is not an ack");
+
+        return -1;
+    }
+
+    return 0;
+}
+
+int __send_data(struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
+{
+    log_debug("comm", "Sending data");
+
+    struct comm_packet packet;
+
+    packet.type = COMM_PTYPE_DATA;
+    packet.length = strlen(buffer);
+    bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
+    strncpy(packet.payload, buffer, strlen(buffer));
+
+    if(__send_packet(client_sockaddr, &packet) != 0)
+    {
+        log_error("comm", "Data could not be sent");
+
+        return -1;
+    }
+
+    return __receive_ack(client_sockaddr);
+}
+
+int __receive_data(struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
+{
+    log_debug("comm", "Receiving data");
+
+    struct comm_packet packet;
+
+    if(__receive_packet(client_sockaddr, &packet) != 0)
+    {
+        log_error("comm", "Could not receive the data");
+
+        return -1;
+    }
+
+    if( packet.type != COMM_PTYPE_DATA )
+    {
+        log_error("comm", "The received packet is not a data");
+
+        return -1;
+    }
+
+    bzero(buffer, COMM_PPAYLOAD_LENGTH);
+    strncpy(buffer, packet.payload, packet.length);
+
+    return __send_ack(client_sockaddr);
+}
+
+int __send_command(struct sockaddr_in *client_sockaddr, char command[COMM_PPAYLOAD_LENGTH])
+{
+    log_debug("comm", "Sending command");
+
+    struct comm_packet packet;
+
+    packet.type = COMM_PTYPE_CMD;
+    packet.length = strlen(command);
+    bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
+    strncpy(packet.payload, command, strlen(command));
+
+    if(__send_packet(client_sockaddr, &packet) != 0)
+    {
+        log_error("comm", "Command '%s' could not be sent", command);
+
+        return -1;
+    }
+
+    return __receive_ack(client_sockaddr);
+}
+
+int __receive_command(struct sockaddr_in *client_sockaddr, char command[COMM_PPAYLOAD_LENGTH])
+{
+    log_debug("comm", "Receiving command");
+
+    struct comm_packet packet;
+
+    if(__receive_packet(client_sockaddr, &packet) != 0)
+    {
+        log_error("comm", "Could not receive the command");
+
+        return -1;
+    }
+
+    if( packet.type != COMM_PTYPE_CMD )
+    {
+        log_error("comm", "The received packet is not a command");
+
+        return -1;
+    }
+
+    bzero(command, COMM_PPAYLOAD_LENGTH);
+    strncpy(command, packet.payload, packet.length);
+
+    return __send_ack(client_sockaddr);
 }

@@ -55,6 +55,7 @@ int close_server(int sockfd);
 
 int wait_connection(char *hostname, int port, int sockfd);
 
+#define COMM_TIMEOUT 5000
 #define COMM_PPAYLOAD_LENGTH 256
 #define COMM_PTYPE_DATA 0
 #define COMM_PTYPE_CMD 1

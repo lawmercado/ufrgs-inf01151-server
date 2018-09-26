@@ -7,10 +7,11 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <poll.h>
+#include <math.h>
 #include "comm.h"
 #include "log.h"
 #include "file.h"
-#include <math.h>
+#include "sync.h"
 
 int __socket_instance;
 int __counter_client_port;
@@ -24,6 +25,7 @@ int __client_remove(int port);
 void __server_init_sockaddr(struct sockaddr_in *sockaddr, int port);
 int __server_create_socket(struct sockaddr_in *server_sockaddr);
 void __server_wait_connection();
+int __server_handle_command(struct comm_client *client, char *command);
 
 int __send_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
 int __receive_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
@@ -33,6 +35,8 @@ int __send_data(int *socket_instance, struct sockaddr_in *client_sockaddr, struc
 int __receive_data(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
 int __send_command(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
 int __receive_command(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
+int __send_file(int *socket_instance, struct sockaddr_in *sockaddr, char path[MAX_PATH_LENGTH]);
+int __receive_file(int *socket_instance, struct sockaddr_in *sockaddr, char path[MAX_PATH_LENGTH]);
 
 void __client_setup_list()
 {
@@ -97,12 +101,32 @@ int __client_create(struct sockaddr_in *client_sockaddr, char username[COMM_MAX_
         __clients[client_slot].sockaddr = client_sockaddr;
         __clients[client_slot].valid = 1;
 
-        // TODO: Generate thread
-
-        return 0;
+        return client_slot;
     }
 
     return -1;
+}
+
+int __server_handle_command(struct comm_client *client, char *command)
+{
+    char operation[COMM_COMMAND_LENGTH], parameter[COMM_PARAMETER_LENGTH];
+
+    sscanf(command, "%s %s", operation, parameter);
+
+    log_debug("comm", "Command read '%s %s'", operation, parameter);
+
+    if(strcmp(operation, "download") == 0)
+    {
+        char path[COMM_PARAMETER_LENGTH];
+        sync_get_user_file_path("sync_dir", client->username, parameter, path, COMM_PARAMETER_LENGTH);
+
+        if(__send_file(&(client->socket_instance), client->sockaddr, path) == 0)
+        {
+            log_debug("comm", "%s done", client->username);
+        }
+    }
+
+    return 0;
 }
 
 int __client_remove(int port)
@@ -173,7 +197,6 @@ void __server_wait_connection()
     while(1)
     {
         char receive_buffer[COMM_PPAYLOAD_LENGTH];
-        char operation[COMM_USERNAME_LENGTH], username[COMM_USERNAME_LENGTH];
         struct sockaddr_in client_sockaddr;
         struct comm_packet packet;
 
@@ -181,6 +204,8 @@ void __server_wait_connection()
 
         if(__receive_command(&__socket_instance, &client_sockaddr, receive_buffer) == 0)
         {
+            char operation[COMM_COMMAND_LENGTH], username[COMM_USERNAME_LENGTH];
+
             bzero(operation, COMM_COMMAND_LENGTH);
             bzero(username, COMM_USERNAME_LENGTH);
             bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
@@ -198,7 +223,9 @@ void __server_wait_connection()
                     __counter_client_port--;
                 }
 
-                if(__client_create(&client_sockaddr, username, __counter_client_port) != 0)
+                int client_slot;
+
+                if((client_slot = __client_create(&client_sockaddr, username, __counter_client_port)) < 0)
                 {
                     log_debug("comm", "Could not connect logged");
                     // TODO: Send error
@@ -207,6 +234,15 @@ void __server_wait_connection()
                 log_debug("comm", "Client logged");
 
                 __client_print_list();
+
+                // TODO: Generate thread
+
+                char command[COMM_PPAYLOAD_LENGTH];
+
+                if(__receive_command(&__clients[client_slot].socket_instance, __clients[client_slot].sockaddr, command) == 0)
+                {
+                    __server_handle_command(&__clients[client_slot], command);
+                }
             }
         }
     }
@@ -331,7 +367,7 @@ int __send_data(int *socket_instance, struct sockaddr_in *client_sockaddr, struc
     log_debug("comm", "Sending data");
 
     packet->type = COMM_PTYPE_DATA;
-    
+
     if(__send_packet(socket_instance, client_sockaddr, packet) != 0)
     {
         log_error("comm", "Data could not be sent");
@@ -410,63 +446,70 @@ int __receive_command(int *socket_instance, struct sockaddr_in *client_sockaddr,
     return __send_ack(socket_instance, client_sockaddr);
 }
 
-int __get_file_datagram(FILE *f, char *payload)
-{
-    return fread(payload, COMM_PPAYLOAD_LENGTH, 1, f);
-}
-
 int __send_file(int *socket_instance, struct sockaddr_in *sockaddr, char path[MAX_PATH_LENGTH])
 {
+    FILE *file = NULL;
     int i;
-	long fileSize = 0;
-    FILE *f;
 
-	if ((fileSize = file_size(path)) < 0)
-	{
-		printf("ERROR: invalid file size");
-	}
+    file = fopen(path, "rb");
 
-    f = fopen (path, "rb");
+    if(file == NULL)
+    {
+        log_error("comm", "Could not open the file in '%s'", path);
 
-    int NUM_PACKETS = (int) ceil( ( (float) fileSize) / (float) COMM_PPAYLOAD_LENGTH);
+        return -1;
+    }
+
+    int num_packets = (int) ceil(file_size(path) / (float) COMM_PPAYLOAD_LENGTH);
 
     struct comm_packet packet;
 
-    for(i = 0; i < NUM_PACKETS; i++)
+    for(i = 0; i < num_packets; i++)
     {
-        int length = __get_file_datagram(f, packet.payload);
+        int length = file_read_bytes(file, packet.payload, COMM_PPAYLOAD_LENGTH);
 
         packet.length = length;
-        packet.total_size = NUM_PACKETS;
+        packet.total_size = num_packets;
         packet.seqn = i;
 
         __send_data(socket_instance, sockaddr, &packet);
     }
 
-	
-	fclose(f);
+    fclose(file);
     return 0;
 }
 
 int __receive_file(int *socket_instance, struct sockaddr_in *sockaddr, char path[MAX_PATH_LENGTH])
 {
-
+    FILE *file = NULL;
+    int i;
     struct comm_packet packet;
-    __receive_data(socket_instance, sockaddr, &packet);
 
-    char *buffer = (char *) calloc (packet.total_size * COMM_PPAYLOAD_LENGTH, sizeof(char));
+    file = fopen(path, "wb");
 
-
-    int i = 0, length = 0;
-    while(i < packet.total_size)
+    if(file == NULL)
     {
-        length += packet.length;
-        strcat(buffer, packet.payload);
-        __receive_data(socket_instance, sockaddr, &packet);
-        i++;
+        log_error("comm", "Could not open the file in '%s'", path);
+
+        return -1;
     }
 
-    file_write_buffer(path, buffer, sizeof(buffer));
+    if(__receive_data(socket_instance, sockaddr, &packet) == 0)
+    {
+        file_write_bytes(file, packet.payload, packet.length);
 
-    return 0;
+        for(i = 1; i < packet.total_size; i++)
+        {
+            __receive_data(socket_instance, sockaddr, &packet);
+            file_write_bytes(file, packet.payload, packet.length);
+        }
+
+        fclose(file);
+
+        return 0;
+    }
+
+    fclose(file);
+
+    return -1;
 }

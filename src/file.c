@@ -107,3 +107,13 @@ int file_get_name_from_path(char *path, char *filename)
     }
     return -1;
 }
+
+int file_read_bytes(FILE *file, char *buffer, int length)
+{
+    return fread(buffer, sizeof(char), length, file);
+}
+
+int file_write_bytes(FILE *file, char *buffer, int length)
+{
+    return fwrite(buffer, sizeof(char), length, file);
+}

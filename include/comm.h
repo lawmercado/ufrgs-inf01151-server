@@ -5,8 +5,9 @@
 
 #define COMM_COMMAND_LENGTH 64
 #define COMM_USERNAME_LENGTH 64
+#define COMM_PARAMETER_LENGTH 128
 #define COMM_MAX_CLIENT 128
-#define COMM_TIMEOUT 5000
+#define COMM_TIMEOUT 20000
 
 #define COMM_PPAYLOAD_LENGTH 256
 #define COMM_PTYPE_DATA 0
@@ -24,7 +25,7 @@ struct comm_packet {
 struct comm_client {
     char username[COMM_USERNAME_LENGTH];
     int socket_instance;
-    struct sockaddr_in* sockaddr;
+    struct sockaddr_in *sockaddr;
     int port; // Port where we should receive the data from the client
     int valid;
 };

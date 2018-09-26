@@ -25,18 +25,18 @@ int sync_init(char *username, char* dir_path)
     return 0;
 }
 
-void sync_get_user_dir_path(char *dir_path, char *username, char *result_path)
+void sync_get_user_dir_path(char *dir_path, char *username, char *result_path, int length)
 {
-    bzero(result_path, MAX_PATH_LENGTH);
+    bzero(result_path, length);
 
     strcat(result_path, dir_path);
     strcat(result_path, "/");
     strcat(result_path, username);
 }
 
-void sync_get_user_file_path(char *dir_path, char *username, char *file, char *result_path)
+void sync_get_user_file_path(char *dir_path, char *username, char *file, char *result_path, int length)
 {
-    sync_get_user_dir_path(dir_path, username, result_path);
+    sync_get_user_dir_path(dir_path, username, result_path, length);
 
     strcat(result_path, "/");
     strcat(result_path, file);
@@ -49,7 +49,7 @@ int sync_list_files(char *username, char* dir_path)
     MACTimestamp entryMAC;
     char path[MAX_PATH_LENGTH];
 
-    sync_get_user_dir_path(dir_path, username, path);
+    sync_get_user_dir_path(dir_path, username, path, MAX_PATH_LENGTH);
 
     watched_dir = opendir(path);
 
@@ -62,7 +62,7 @@ int sync_list_files(char *username, char* dir_path)
                 continue;
             }
 
-            sync_get_user_file_path(dir_path, username, entry->d_name, path);
+            sync_get_user_file_path(dir_path, username, entry->d_name, path, MAX_PATH_LENGTH);
 
             if(file_mac(path, &entryMAC) == 0)
             {

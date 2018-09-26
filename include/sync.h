@@ -3,9 +3,9 @@
 
 int sync_init(char* dir_path, char *username);
 
-void sync_get_user_dir_path(char *dir_path, char *username, char *result_path);
+void sync_get_user_dir_path(char *dir_path, char *username, char *result_path, int length);
 
-void sync_get_user_file_path(char *dir_path, char *username, char *file, char *result_path);
+void sync_get_user_file_path(char *dir_path, char *username, char *file, char *result_path, int length);
 
 int sync_list_files(char *username, char* dir_path);
 

@@ -17,6 +17,7 @@ struct comm_client __clients[COMM_MAX_CLIENT];
 void __client_setup_list();
 int __client_get_empty_list_slot();
 int __client_create(struct sockaddr_in *client_sockaddr, char username[COMM_MAX_CLIENT], int port);
+int __client_remove(int port);
 
 void __server_init_sockaddr(struct sockaddr_in *sockaddr, int port);
 int __server_create_socket(struct sockaddr_in *server_sockaddr);
@@ -39,6 +40,21 @@ void __client_setup_list()
     {
         __clients[i].valid = 0;
     }
+}
+
+int __client_get_slot_by_port(int port)
+{
+    int i;
+
+    for(i = 0; i < COMM_MAX_CLIENT; i++)
+    {
+        if(__clients[i].valid == 1 && __clients[i].port == port)
+        {
+            return i;
+        }
+    }
+
+    return -1;
 }
 
 int __client_get_empty_list_slot()
@@ -82,6 +98,19 @@ int __client_create(struct sockaddr_in *client_sockaddr, char username[COMM_MAX_
         // TODO: Generate thread
 
         return 0;
+    }
+
+    return -1;
+}
+
+int __client_remove(int port)
+{
+    int client_slot = __client_get_slot_by_port(port);
+
+    if(client_slot != -1)
+    {
+        close(__clients[client_slot].socket_instance);
+        __clients[client_slot].valid = 0;
     }
 
     return -1;

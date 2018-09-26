@@ -5,16 +5,10 @@ TESTS = test
 FILES = $(SRC)/comm.c $(SRC)/log.c
 CMD = $(CC) $(CFLAGS) $(FILES) -lpthread -Iinclude
 
-all: comm_test
+all: server
 
-client:
-	$(CMD) $(SRC)/server.c -o client
-
-comm_test:
-	$(CMD) $(TESTS)/comm_test.c -o comm_test
-
-sync_test:
-	$(CMD) $(TESTS)/sync_test.c -o sync_test
+server:
+	$(CMD) $(SRC)/server.c -o server
 
 clean:
-	rm -f client comm_test sync_test
+	rm -f client server

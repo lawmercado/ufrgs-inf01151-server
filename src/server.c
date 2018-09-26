@@ -1,4 +1,7 @@
+#include <stdio.h>
+#include <stdlib.h>
 #include "comm.h"
+#include "log.h"
 
 int main(int argc, char *argv[])
 {
@@ -10,7 +13,7 @@ int main(int argc, char *argv[])
 
 	int port = atoi(argv[1]);
 
-    printf("COMM INIT %d\n", comm_init(port));
+    comm_init(port);
 
 	return 0;
 }

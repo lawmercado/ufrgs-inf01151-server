@@ -1,216 +1,187 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
 #include <poll.h>
 #include "comm.h"
 #include "log.h"
 
-/*void __create_socket(struct sockaddr_in *server_sock, int port){
-
-	server_sock->sin_family = AF_INET;
-	server_sock->sin_port = htons(port);
-	server_sock->sin_addr.s_addr = INADDR_ANY;
-	bzero(&(server_sock->sin_zero), 8);
-
-}
-
-int open_server(char *hostname, int port)
-{
-	int sockfd;
-	struct sockaddr_in server_sock;
-
-	__create_socket(&server_sock, port);
-
-	if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1){
-		printf("ERROR opening socket");
-		exit(1);
-	}
-
-	printf("\nHostname: %s\nPort: %d\nSocket id: %d\n", hostname, port, sockfd);
-
-
-	if (bind(sockfd, (struct sockaddr *) &server_sock, sizeof(struct sockaddr)) < 0){
-		printf("ERROR on binding");
-		exit(1);
-	}
-
-	wait_connection(hostname, port, sockfd);
-
-	return sockfd;
-
-}
-
-int close_server(int sockfd){
-
-	close(sockfd);
-	return 0;
-
-}
-
-int __send_packet(int *id_msg, char *buffer, int sockfd, struct sockaddr_in *serv){
-    Frame packet;
-
-	int status = 0;
-
-	socklen_t tolen = sizeof(struct sockaddr_in);
-
-	memcpy(packet.buffer, buffer, BUFFER_SIZE);
-	packet.ack = 0;
-	packet.id_msg = *id_msg;
-
-	while(packet.ack != 1){
-		status = sendto(sockfd, &packet, sizeof(packet), 0, (const struct sockaddr *) serv, sizeof(struct sockaddr_in));
-		if(status < 0){
-			printf("\n[Error sendto]: Sending packet fault!\n");
-			return -1;
-		}
-		else{
-			printf("\n[Sendto ok]: Sending packet: socket id: %d, msg id: %d!\n", sockfd, packet.id_msg);
-		}
-
-		status = recvfrom(sockfd, &packet, sizeof(packet), 0, (struct sockaddr *) serv, &tolen);
-		if(status < 2){
-
-			printf("\n[Error recvfrom]: Receiving ack fault!\n");
-			return -2;
-		}
-
-		packet.ack = 1;
-
-
-	}
-
-	printf("Got an ack: %s\n", buffer);
-
-
-	*id_msg = *id_msg +1;
-	return 0;
-
-}
-
-int __receive_packet(int *id_msg, char *buffer, int sockfd, struct sockaddr_in *serv){
-    Frame packet;
-	int status = 0;
-	int ack = 0;
-
-	socklen_t fromlen = sizeof(struct sockaddr_in);
-
-	do{
-		status = recvfrom(sockfd, newMsg, sizeof(*newMsg), 0, (struct sockaddr *) serv, &fromlen);
-		if(status < 0){
-			printf("\n[Error recvfrom]: Receiving packet fault!\n");
-			return -1;
-		}
-		else{
-			printf("\n[Recvfrom ok]: Receiving packet: socket id: %d, msg id: !\n", sockfd);
-		}
-
-		if(sendto(sockfd, &newMsg, sizeof(newMsg), 0, (const struct sockaddr *) serv, sizeof(struct sockaddr_in)) < 2){
-
-			printf("\n[Error sendto]: Sending ack fault!\n");
-			return -2;
-		}
-		else
-		{
-			printf("\n[Sendto ok]: Sending ack: socket id: %d!\n", sockfd);
-		}
-
-		ack = 1;
-	}
-	while(ack != 1);
-
-	printf("Got an ack: %s\n", newMsg->buffer);
-
-
-	return 0;
-
-}
-
-int wait_connection(char *hostname, int port, int sockfd)
-{
-	struct sockaddr_in cli_sock;
-	socklen_t clilen;
-	int msg_counter;
-
-
-	TextMessage newMsg;
-
-	clilen = sizeof(struct sockaddr_in);
-
-	while (1) {
-
-		bzero(newMsg.buffer, BUFFER_SIZE);
-
-		if(__receive_packet(&newMsg, sockfd, &cli_sock) < 0)
-		{
-			/// error
-			printf("ERROR on recvfrom");
-			exit(1);
-		}
-		else
-		{
-			printf("Received a datagram: %s\n", newMsg.buffer);
-		}
-
-	}
-
-	return 0;
-}
-*/
-
 int __socket_instance;
 int __counter_client_port;
+struct comm_client __clients[COMM_MAX_CLIENT];
 
-void __wait_connection();
-void __init_sockaddr(struct sockaddr_in *sockaddr, int port);
-int __send_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
-int __receive_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
-int __send_ack(struct sockaddr_in *client_sockaddr);
-int __receive_ack(struct sockaddr_in *client_sockaddr);
-int __send_data(struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
-int __receive_data(struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
-int __send_command(struct sockaddr_in *client_sockaddr, char command[COMM_PPAYLOAD_LENGTH]);
-int __receive_command(struct sockaddr_in *client_sockaddr, char command[COMM_PPAYLOAD_LENGTH]);
+void __client_setup_list();
+int __client_get_empty_list_slot();
+int __client_create(struct sockaddr_in *client_sockaddr, char username[COMM_MAX_CLIENT], int port);
+
+void __server_init_sockaddr(struct sockaddr_in *sockaddr, int port);
+int __server_create_socket(struct sockaddr_in *server_sockaddr);
+void __server_wait_connection();
+
+int __send_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
+int __receive_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
+int __send_ack(int *socket_instance, struct sockaddr_in *client_sockaddr);
+int __receive_ack(int *socket_instance, struct sockaddr_in *client_sockaddr);
+int __send_data(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
+int __receive_data(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
+int __send_command(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
+int __receive_command(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
+
+void __client_setup_list()
+{
+    int i;
+
+    for(i = 0; i < COMM_MAX_CLIENT; i++)
+    {
+        __clients[i].valid = 0;
+    }
+}
+
+int __client_get_empty_list_slot()
+{
+    int i;
+
+    for(i = 0; i < COMM_MAX_CLIENT; i++)
+    {
+        if(__clients[i].valid == 0)
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+int __client_create(struct sockaddr_in *client_sockaddr, char username[COMM_MAX_CLIENT], int port)
+{
+    int client_slot = __client_get_empty_list_slot();
+    struct sockaddr_in server_sockaddr;
+
+    __server_init_sockaddr(&server_sockaddr, port);
+
+    if(client_slot != -1)
+    {
+        strncpy(__clients[client_slot].username, username, strlen(username));
+        __clients[client_slot].socket_instance = __server_create_socket(&server_sockaddr);
+
+        if(__clients[client_slot].socket_instance == -1)
+        {
+            log_error("comm", "Could not create socket instance");
+
+            return -1;
+        }
+
+        __clients[client_slot].port = port;
+        __clients[client_slot].sockaddr = client_sockaddr;
+        __clients[client_slot].valid = 1;
+
+        // TODO: Generate thread
+
+        return 0;
+    }
+
+    return -1;
+}
+
+void __client_print_list()
+{
+    int i;
+
+    for(i = 0; i < COMM_MAX_CLIENT; i++)
+    {
+        if(__clients[i].valid == 1)
+        {
+            printf("Client %s, on port %d with socket %d\n", __clients[i].username, __clients[i].port, __clients[i].socket_instance);
+        }
+    }
+}
+
+int __server_create_socket(struct sockaddr_in *server_sockaddr)
+{
+    int socket_instance;
+
+    if((socket_instance = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
+    {
+		log_error("comm", "Could not create a socket instance");
+
+        return -1;
+	}
+
+	if(bind(socket_instance, (struct sockaddr *)server_sockaddr, sizeof(struct sockaddr)) < 0)
+    {
+		log_error("comm", "Could not bind");
+
+        close(socket_instance);
+		return -1;
+	}
+
+    return socket_instance;
+}
 
 int comm_init(int port)
 {
     struct sockaddr_in sockaddr;
 
-	__init_sockaddr(&sockaddr, port);
+	__server_init_sockaddr(&sockaddr, port);
 
-    if((__socket_instance = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
-    {
-		log_error("comm", "Could not create socket instance");
+    __socket_instance = __server_create_socket(&sockaddr);
 
-        return -1;
-	}
+    __counter_client_port = port;
 
-	if(bind(__socket_instance, (struct sockaddr *) &sockaddr, sizeof(struct sockaddr)) < 0)
-    {
-		log_error("comm", "Could not bind");
-
-        close(__socket_instance);
-		return -1;
-	}
-
-    __counter_client_port = port + 1;
-
-    __wait_connection();
+    __server_wait_connection();
 
     return 0;
 }
 
-void __wait_connection()
+void __server_wait_connection()
 {
     while(1)
     {
-        char command[COMM_PPAYLOAD_LENGTH];
-        struct sockaddr_in client;
+        char send_buffer[COMM_PPAYLOAD_LENGTH];
+        char receive_buffer[COMM_PPAYLOAD_LENGTH];
+        char operation[COMM_USERNAME_LENGTH], username[COMM_USERNAME_LENGTH];
+        struct sockaddr_in client_sockaddr;
 
-        log_debug("comm", "WAITING");
+        log_debug("comm", "Waiting connections...");
 
-        log_debug("comm", "RECEIVE %d COMMAND %s", __receive_command(&client, command), command);
+        if(__receive_command(&__socket_instance, &client_sockaddr, receive_buffer) == 0)
+        {
+            bzero(operation, COMM_COMMAND_LENGTH);
+            bzero(username, COMM_USERNAME_LENGTH);
+            bzero(send_buffer, COMM_PPAYLOAD_LENGTH);
+
+            sscanf(receive_buffer, "%s %s", operation, username);
+
+            if(strcmp(operation, "login") == 0)
+            {
+                __counter_client_port++;
+
+                sprintf(send_buffer, "%d", __counter_client_port);
+
+                if(__send_data(&__socket_instance, &client_sockaddr, send_buffer) != 0)
+                {
+                    __counter_client_port--;
+                }
+
+                if(__client_create(&client_sockaddr, username, __counter_client_port) != 0)
+                {
+                    log_debug("comm", "Could not connect logged");
+                    // TODO: Send error
+                }
+
+                log_debug("comm", "Client logged");
+
+                __client_print_list();
+            }
+        }
     }
 }
 
-void __init_sockaddr(struct sockaddr_in *sockaddr, int port)
+void __server_init_sockaddr(struct sockaddr_in *sockaddr, int port)
 {
     sockaddr->sin_family = AF_INET;
 	sockaddr->sin_port = htons(port);
@@ -218,15 +189,11 @@ void __init_sockaddr(struct sockaddr_in *sockaddr, int port)
 	bzero((void *)&(sockaddr->sin_zero), sizeof(sockaddr->sin_zero));
 }
 
-int __send_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *packet)
+int __send_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet)
 {
     int status;
 
-    status = sendto(__socket_instance, (void *)packet, sizeof(struct comm_packet), 0, (struct sockaddr *)client_sockaddr, sizeof(struct sockaddr));
-
-    perror("sendto");
-
-    log_debug("comm", "Status %d\n", status);
+    status = sendto(*socket_instance, (void *)packet, sizeof(struct comm_packet), 0, (struct sockaddr *)client_sockaddr, sizeof(struct sockaddr));
 
     if(status < 0)
     {
@@ -236,7 +203,7 @@ int __send_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *packe
     return 0;
 }
 
-int __receive_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *packet)
+int __receive_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet)
 {
     /*
     TODO: compare this with the server address to check origin
@@ -255,7 +222,7 @@ int __receive_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *pa
     struct pollfd fd;
     int res;
 
-    fd.fd = __socket_instance;
+    fd.fd = *socket_instance;
     fd.events = POLLIN;
 
     res = poll(&fd, 1, COMM_TIMEOUT);
@@ -275,7 +242,7 @@ int __receive_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *pa
     else
     {
         // Receives an ack from the server
-        status = recvfrom(__socket_instance, (void *)packet, sizeof(*packet), 0, (struct sockaddr *)client_sockaddr, &from_length);
+        status = recvfrom(*socket_instance, (void *)packet, sizeof(*packet), 0, (struct sockaddr *)client_sockaddr, &from_length);
 
         if(status < 0)
         {
@@ -286,7 +253,7 @@ int __receive_packet(struct sockaddr_in *client_sockaddr, struct comm_packet *pa
     }
 }
 
-int __send_ack(struct sockaddr_in *client_sockaddr)
+int __send_ack(int *socket_instance, struct sockaddr_in *client_sockaddr)
 {
     log_debug("comm", "Sending ack");
 
@@ -295,7 +262,7 @@ int __send_ack(struct sockaddr_in *client_sockaddr)
     packet.type = COMM_PTYPE_ACK;
     bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
 
-    if(__send_packet(client_sockaddr, &packet) != 0)
+    if(__send_packet(socket_instance, client_sockaddr, &packet) != 0)
     {
         log_error("comm", "Ack could not be sent");
 
@@ -305,13 +272,13 @@ int __send_ack(struct sockaddr_in *client_sockaddr)
     return 0;
 }
 
-int __receive_ack(struct sockaddr_in *client_sockaddr)
+int __receive_ack(int *socket_instance, struct sockaddr_in *client_sockaddr)
 {
     log_debug("comm", "Receiving ack");
 
     struct comm_packet packet;
 
-    if(__receive_packet(client_sockaddr, &packet) != 0)
+    if(__receive_packet(socket_instance, client_sockaddr, &packet) != 0)
     {
         log_error("comm", "Could not receive an ack");
 
@@ -328,7 +295,7 @@ int __receive_ack(struct sockaddr_in *client_sockaddr)
     return 0;
 }
 
-int __send_data(struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
+int __send_data(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
 {
     log_debug("comm", "Sending data");
 
@@ -339,23 +306,23 @@ int __send_data(struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_L
     bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
     strncpy(packet.payload, buffer, strlen(buffer));
 
-    if(__send_packet(client_sockaddr, &packet) != 0)
+    if(__send_packet(socket_instance, client_sockaddr, &packet) != 0)
     {
         log_error("comm", "Data could not be sent");
 
         return -1;
     }
 
-    return __receive_ack(client_sockaddr);
+    return __receive_ack(socket_instance, client_sockaddr);
 }
 
-int __receive_data(struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
+int __receive_data(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
 {
     log_debug("comm", "Receiving data");
 
     struct comm_packet packet;
 
-    if(__receive_packet(client_sockaddr, &packet) != 0)
+    if(__receive_packet(socket_instance, client_sockaddr, &packet) != 0)
     {
         log_error("comm", "Could not receive the data");
 
@@ -372,37 +339,37 @@ int __receive_data(struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOA
     bzero(buffer, COMM_PPAYLOAD_LENGTH);
     strncpy(buffer, packet.payload, packet.length);
 
-    return __send_ack(client_sockaddr);
+    return __send_ack(socket_instance, client_sockaddr);
 }
 
-int __send_command(struct sockaddr_in *client_sockaddr, char command[COMM_PPAYLOAD_LENGTH])
+int __send_command(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
 {
     log_debug("comm", "Sending command");
 
     struct comm_packet packet;
 
     packet.type = COMM_PTYPE_CMD;
-    packet.length = strlen(command);
+    packet.length = strlen(buffer);
     bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
-    strncpy(packet.payload, command, strlen(command));
+    strncpy(packet.payload, buffer, strlen(buffer));
 
-    if(__send_packet(client_sockaddr, &packet) != 0)
+    if(__send_packet(socket_instance, client_sockaddr, &packet) != 0)
     {
-        log_error("comm", "Command '%s' could not be sent", command);
+        log_error("comm", "Command '%s' could not be sent", buffer);
 
         return -1;
     }
 
-    return __receive_ack(client_sockaddr);
+    return __receive_ack(socket_instance, client_sockaddr);
 }
 
-int __receive_command(struct sockaddr_in *client_sockaddr, char command[COMM_PPAYLOAD_LENGTH])
+int __receive_command(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
 {
     log_debug("comm", "Receiving command");
 
     struct comm_packet packet;
 
-    if(__receive_packet(client_sockaddr, &packet) != 0)
+    if(__receive_packet(socket_instance, client_sockaddr, &packet) != 0)
     {
         log_error("comm", "Could not receive the command");
 
@@ -416,8 +383,8 @@ int __receive_command(struct sockaddr_in *client_sockaddr, char command[COMM_PPA
         return -1;
     }
 
-    bzero(command, COMM_PPAYLOAD_LENGTH);
-    strncpy(command, packet.payload, packet.length);
+    bzero(buffer, COMM_PPAYLOAD_LENGTH);
+    strncpy(buffer, packet.payload, packet.length);
 
-    return __send_ack(client_sockaddr);
+    return __send_ack(socket_instance, client_sockaddr);
 }

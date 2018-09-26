@@ -2,8 +2,8 @@ CC = gcc
 CFLAGS = -Wall -g -DDEBUG
 SRC = src
 TESTS = test
-FILES = $(SRC)/comm.c $(SRC)/log.c
-CMD = $(CC) $(CFLAGS) $(FILES) -lpthread -Iinclude
+FILES = $(SRC)/comm.c $(SRC)/log.c $(SRC)/file.c
+CMD = $(CC) $(CFLAGS) $(FILES) -lpthread -Iinclude -lm
 
 all: server
 

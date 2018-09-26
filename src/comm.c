@@ -9,6 +9,8 @@
 #include <poll.h>
 #include "comm.h"
 #include "log.h"
+#include "file.h"
+#include <math.h>
 
 int __socket_instance;
 int __counter_client_port;
@@ -27,8 +29,8 @@ int __send_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, str
 int __receive_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
 int __send_ack(int *socket_instance, struct sockaddr_in *client_sockaddr);
 int __receive_ack(int *socket_instance, struct sockaddr_in *client_sockaddr);
-int __send_data(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
-int __receive_data(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
+int __send_data(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
+int __receive_data(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
 int __send_command(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
 int __receive_command(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH]);
 
@@ -170,10 +172,10 @@ void __server_wait_connection()
 {
     while(1)
     {
-        char send_buffer[COMM_PPAYLOAD_LENGTH];
         char receive_buffer[COMM_PPAYLOAD_LENGTH];
         char operation[COMM_USERNAME_LENGTH], username[COMM_USERNAME_LENGTH];
         struct sockaddr_in client_sockaddr;
+        struct comm_packet packet;
 
         log_debug("comm", "Waiting connections...");
 
@@ -181,7 +183,7 @@ void __server_wait_connection()
         {
             bzero(operation, COMM_COMMAND_LENGTH);
             bzero(username, COMM_USERNAME_LENGTH);
-            bzero(send_buffer, COMM_PPAYLOAD_LENGTH);
+            bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
 
             sscanf(receive_buffer, "%s %s", operation, username);
 
@@ -189,9 +191,9 @@ void __server_wait_connection()
             {
                 __counter_client_port++;
 
-                sprintf(send_buffer, "%d", __counter_client_port);
+                sprintf(packet.payload, "%d", __counter_client_port);
 
-                if(__send_data(&__socket_instance, &client_sockaddr, send_buffer) != 0)
+                if(__send_data(&__socket_instance, &client_sockaddr, &packet) != 0)
                 {
                     __counter_client_port--;
                 }
@@ -324,18 +326,13 @@ int __receive_ack(int *socket_instance, struct sockaddr_in *client_sockaddr)
     return 0;
 }
 
-int __send_data(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
+int __send_data(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet)
 {
     log_debug("comm", "Sending data");
 
-    struct comm_packet packet;
-
-    packet.type = COMM_PTYPE_DATA;
-    packet.length = strlen(buffer);
-    bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
-    strncpy(packet.payload, buffer, strlen(buffer));
-
-    if(__send_packet(socket_instance, client_sockaddr, &packet) != 0)
+    packet->type = COMM_PTYPE_DATA;
+    
+    if(__send_packet(socket_instance, client_sockaddr, packet) != 0)
     {
         log_error("comm", "Data could not be sent");
 
@@ -345,28 +342,23 @@ int __send_data(int *socket_instance, struct sockaddr_in *client_sockaddr, char 
     return __receive_ack(socket_instance, client_sockaddr);
 }
 
-int __receive_data(int *socket_instance, struct sockaddr_in *client_sockaddr, char buffer[COMM_PPAYLOAD_LENGTH])
+int __receive_data(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet)
 {
     log_debug("comm", "Receiving data");
 
-    struct comm_packet packet;
-
-    if(__receive_packet(socket_instance, client_sockaddr, &packet) != 0)
+    if(__receive_packet(socket_instance, client_sockaddr, packet) != 0)
     {
         log_error("comm", "Could not receive the data");
 
         return -1;
     }
 
-    if( packet.type != COMM_PTYPE_DATA )
+    if( packet->type != COMM_PTYPE_DATA )
     {
         log_error("comm", "The received packet is not a data");
 
         return -1;
     }
-
-    bzero(buffer, COMM_PPAYLOAD_LENGTH);
-    strncpy(buffer, packet.payload, packet.length);
 
     return __send_ack(socket_instance, client_sockaddr);
 }
@@ -416,4 +408,65 @@ int __receive_command(int *socket_instance, struct sockaddr_in *client_sockaddr,
     strncpy(buffer, packet.payload, packet.length);
 
     return __send_ack(socket_instance, client_sockaddr);
+}
+
+int __get_file_datagram(FILE *f, char *payload)
+{
+    return fread(payload, COMM_PPAYLOAD_LENGTH, 1, f);
+}
+
+int __send_file(int *socket_instance, struct sockaddr_in *sockaddr, char path[MAX_PATH_LENGTH])
+{
+    int i;
+	long fileSize = 0;
+    FILE *f;
+
+	if ((fileSize = file_size(path)) < 0)
+	{
+		printf("ERROR: invalid file size");
+	}
+
+    f = fopen (path, "rb");
+
+    int NUM_PACKETS = (int) ceil( ( (float) fileSize) / (float) COMM_PPAYLOAD_LENGTH);
+
+    struct comm_packet packet;
+
+    for(i = 0; i < NUM_PACKETS; i++)
+    {
+        int length = __get_file_datagram(f, packet.payload);
+
+        packet.length = length;
+        packet.total_size = NUM_PACKETS;
+        packet.seqn = i;
+
+        __send_data(socket_instance, sockaddr, &packet);
+    }
+
+	
+	fclose(f);
+    return 0;
+}
+
+int __receive_file(int *socket_instance, struct sockaddr_in *sockaddr, char path[MAX_PATH_LENGTH])
+{
+
+    struct comm_packet packet;
+    __receive_data(socket_instance, sockaddr, &packet);
+
+    char *buffer = (char *) calloc (packet.total_size * COMM_PPAYLOAD_LENGTH, sizeof(char));
+
+
+    int i = 0, length = 0;
+    while(i < packet.total_size)
+    {
+        length += packet.length;
+        strcat(buffer, packet.payload);
+        __receive_data(socket_instance, sockaddr, &packet);
+        i++;
+    }
+
+    file_write_buffer(path, buffer, sizeof(buffer));
+
+    return 0;
 }

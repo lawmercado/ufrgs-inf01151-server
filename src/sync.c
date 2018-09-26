@@ -7,91 +7,51 @@
 #include "file.h"
 #include "log.h"
 
-/**
- * Initializes the user directory
- *
- * @param char* username The username
- * @return 0 if no errors, -1 otherwise
- */
-int sync_init(char *dir_path)
-{
-    
-}
-
-/**
- * Stop the synchronization process
- *
- */
-void sync_stop()
-{
-    pthread_mutex_lock(&__event_handling_mutex);
-
-    while(__is_event_processing)
-    {
-        pthread_cond_wait(&__events_done_processing, &__event_handling_mutex);
-    }
-
-    __stop_event_handling = 1;
-
-    pthread_mutex_unlock(&__event_handling_mutex);
-
-    pthread_join(__watcher_thread, NULL);
-
-    __watcher_unset();
-
-    log_debug("sync", "Synchronization process ended");
-}
-
-/**
- * Updates the file in the synchronized directory
- *
- * @param char* name The name of the file
- * @param char* buffer The content of the file
- * @param int length The buffer size of the file
- * @return 0 if no errors, -1 otherwise
- */
-int sync_update_file(char name[MAX_FILENAME_LENGTH], char *buffer, int length)
+int sync_init(char *username, char* dir_path)
 {
     char path[MAX_PATH_LENGTH];
 
-    sync_stop();
+    bzero(path, MAX_PATH_LENGTH);
 
-    bzero((void *)path, MAX_PATH_LENGTH);
-
-    strcat(path, __watched_dir_path);
+    strcat(path, dir_path);
     strcat(path, "/");
-    strcat(path, name);
+    strcat(path, username);
 
-    if(file_write_buffer(path, buffer, length) != 0)
+    if(file_exists(path) != 0)
     {
-        log_error("sync", "Could not update the file '%s'", name);
-
-        return -1;
-    }
-
-    if(sync_init(__watched_dir_path) != 0)
-    {
-        log_error("sync", "Could not initialize the synchronization process");
-
-        return -1;
+        return file_create_dir(path);
     }
 
     return 0;
 }
 
-/**
- * List the content of the watched directory
- *
- * @return 0 if no errors, -1 otherwise
- */
-int sync_list_files()
+void sync_get_user_dir_path(char *dir_path, char *username, char *result_path)
+{
+    bzero(result_path, MAX_PATH_LENGTH);
+
+    strcat(result_path, dir_path);
+    strcat(result_path, "/");
+    strcat(result_path, username);
+}
+
+void sync_get_user_file_path(char *dir_path, char *username, char *file, char *result_path)
+{
+    sync_get_user_dir_path(dir_path, username, result_path);
+
+    strcat(result_path, "/");
+    strcat(result_path, file);
+}
+
+int sync_list_files(char *username, char* dir_path)
 {
     DIR *watched_dir;
     struct dirent *entry;
-    char path[MAX_PATH_LENGTH];
     MACTimestamp entryMAC;
+    char path[MAX_PATH_LENGTH];
 
-    watched_dir = opendir(__watched_dir_path);
+    sync_get_user_dir_path(dir_path, username, path);
+
+    watched_dir = opendir(path);
 
     if(watched_dir)
     {
@@ -102,10 +62,7 @@ int sync_list_files()
                 continue;
             }
 
-            bzero((void *)path, MAX_PATH_LENGTH);
-            strcat(path, __watched_dir_path);
-            strcat(path, "/");
-            strcat(path, entry->d_name);
+            sync_get_user_file_path(dir_path, username, entry->d_name, path);
 
             if(file_mac(path, &entryMAC) == 0)
             {

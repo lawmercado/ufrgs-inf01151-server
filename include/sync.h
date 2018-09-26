@@ -1,31 +1,12 @@
 #ifndef __SYNC_H__
 #define __SYNC_H__
 
-/**
- * Initializes the user directory
- *
- * @param char* username The username
- * @return 0 if no errors, -1 otherwise
- */
-int sync_init(char *username);
+int sync_init(char* dir_path, char *username);
 
-int sync_get_user_dir_path(char *username, char *path);
+void sync_get_user_dir_path(char *dir_path, char *username, char *result_path);
 
-/**
- * Updates the file in the synchronized directory
- *
- * @param char* name The name of the file
- * @param char* buffer The content of the file
- * @param int length The buffer size of the file
- * @return 0 if no errors, -1 otherwise
- */
-int sync_update_file(char *name, char *buffer, int length);
+void sync_get_user_file_path(char *dir_path, char *username, char *file, char *result_path);
 
-/**
- * List the content of the sync directory
- *
- * @return 0 if no errors, -1 otherwise
- */
-int sync_list_files();
+int sync_list_files(char *username, char* dir_path);
 
 #endif

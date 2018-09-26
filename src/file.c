@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <sys/stat.h>
+#include <string.h>
 #include "file.h"
 #include "log.h"
 
@@ -80,14 +81,29 @@ int file_size(char path[MAX_PATH_LENGTH])
     return -1;
 }
 
-struct stat st = {0};
-
-int file_create_dir(char path[MAX_PATH_LENGTH])
+int file_exists(char path[MAX_PATH_LENGTH])
 {
     struct stat st;
 
-    if(stat(path, &st) == -1)
+    return stat(path, &st);
+}
+
+int file_create_dir(char path[MAX_PATH_LENGTH])
+{
+    return mkdir(path, 0700);
+}
+
+int file_get_name_from_path(char *path, char *filename)
+{
+    int i = 0;
+    for(i = strlen(path); i != 0; i--)
     {
-        mkdir(path, 0700);
+        if (path[i] == '/')
+        {
+            strncpy(filename, path+i+1, ((strlen(path)-i)+1));
+            printf("%s\n", filename);
+            return 0;
+        }
     }
+    return -1;
 }

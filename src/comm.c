@@ -20,12 +20,15 @@ struct comm_client __clients[COMM_MAX_CLIENT];
 void __client_setup_list();
 int __client_get_empty_list_slot();
 int __client_create(struct sockaddr_in *client_sockaddr, char username[COMM_MAX_CLIENT], int port);
-int __client_remove(int port);
+void __client_remove(int port);
 
 void __server_init_sockaddr(struct sockaddr_in *sockaddr, int port);
 int __server_create_socket(struct sockaddr_in *server_sockaddr);
 void __server_wait_connection();
 int __server_handle_command(struct comm_client *client, char *command);
+
+int __command_response_upload(struct comm_client *client, char *file);
+int __command_response_download(struct comm_client *client, char *file);
 
 int __send_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
 int __receive_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
@@ -107,29 +110,7 @@ int __client_create(struct sockaddr_in *client_sockaddr, char username[COMM_MAX_
     return -1;
 }
 
-int __server_handle_command(struct comm_client *client, char *command)
-{
-    char operation[COMM_COMMAND_LENGTH], parameter[COMM_PARAMETER_LENGTH];
-
-    sscanf(command, "%s %s", operation, parameter);
-
-    log_debug("comm", "Command read '%s %s'", operation, parameter);
-
-    if(strcmp(operation, "download") == 0)
-    {
-        char path[COMM_PARAMETER_LENGTH];
-        sync_get_user_file_path("sync_dir", client->username, parameter, path, COMM_PARAMETER_LENGTH);
-
-        if(__send_file(&(client->socket_instance), client->sockaddr, path) == 0)
-        {
-            log_debug("comm", "%s done", client->username);
-        }
-    }
-
-    return 0;
-}
-
-int __client_remove(int port)
+void __client_remove(int port)
 {
     int client_slot = __client_get_slot_by_port(port);
 
@@ -138,8 +119,6 @@ int __client_remove(int port)
         close(__clients[client_slot].socket_instance);
         __clients[client_slot].valid = 0;
     }
-
-    return -1;
 }
 
 void __client_print_list()
@@ -153,6 +132,71 @@ void __client_print_list()
             printf("Client %s, on port %d with socket %d\n", __clients[i].username, __clients[i].port, __clients[i].socket_instance);
         }
     }
+}
+
+int __command_response_download(struct comm_client *client, char *file)
+{
+    char path[COMM_PARAMETER_LENGTH];
+    sync_get_user_file_path("sync_dir", client->username, file, path, COMM_PARAMETER_LENGTH);
+    int result;
+
+    if((result = __send_file(&(client->socket_instance), client->sockaddr, path)) == 0)
+    {
+        log_debug("comm", "Client '%s' done downloading", client->username);
+
+        return 0;
+    }
+
+    return result;
+}
+
+int __command_response_upload(struct comm_client *client, char *file)
+{
+    char path[COMM_PARAMETER_LENGTH];
+    sync_get_user_file_path("sync_dir", client->username, file, path, COMM_PARAMETER_LENGTH);
+    int result;
+
+    if((result = __receive_file(&(client->socket_instance), client->sockaddr, path)) == 0)
+    {
+        log_debug("comm", "Client '%s' done uploading", client->username);
+
+        return 0;
+    }
+
+    return -1;
+}
+
+int __command_response_logout(struct comm_client *client)
+{
+    __client_remove(client->port);
+
+    return 0;
+}
+
+int __server_handle_command(struct comm_client *client, char *command)
+{
+    char operation[COMM_COMMAND_LENGTH], parameter[COMM_PARAMETER_LENGTH];
+
+    sscanf(command, "%s %s", operation, parameter);
+
+    log_debug("comm", "Command read '%s %s'", operation, parameter);
+
+    if(strcmp(operation, "download") == 0)
+    {
+        return __command_response_download(client, parameter);
+    }
+    else if(strcmp(operation, "upload") == 0)
+    {
+        return __command_response_upload(client, parameter);
+    }
+    else if(strcmp(operation, "logout") == 0)
+    {
+        return __command_response_logout(client);
+    }
+
+
+
+    return 0;
 }
 
 int __server_create_socket(struct sockaddr_in *server_sockaddr)
@@ -197,7 +241,7 @@ void __server_wait_connection()
     while(1)
     {
         char receive_buffer[COMM_PPAYLOAD_LENGTH];
-        struct sockaddr_in client_sockaddr;
+        struct sockaddr_in client_sockaddr = {0};
         struct comm_packet packet;
 
         log_debug("comm", "Waiting connections...");
@@ -235,14 +279,16 @@ void __server_wait_connection()
 
                 __client_print_list();
 
-                // TODO: Generate thread
-
-                char command[COMM_PPAYLOAD_LENGTH];
-
-                if(__receive_command(&__clients[client_slot].socket_instance, __clients[client_slot].sockaddr, command) == 0)
+                do
                 {
-                    __server_handle_command(&__clients[client_slot], command);
-                }
+                    char command[COMM_PPAYLOAD_LENGTH];
+                    bzero(command, COMM_PPAYLOAD_LENGTH);
+
+                    if(__receive_command(&__clients[client_slot].socket_instance, __clients[client_slot].sockaddr, command) == 0)
+                    {
+                        __server_handle_command(&__clients[client_slot], command);
+                    }
+                } while(__clients[client_slot].valid == 1);
             }
         }
     }
@@ -298,7 +344,7 @@ int __receive_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, 
     {
         log_error("comm", "Connection timed out");
 
-        return -1;
+        return COMM_TIMEOUT_ERROR;;
     }
     else if(res == -1)
     {
@@ -328,6 +374,9 @@ int __send_ack(int *socket_instance, struct sockaddr_in *client_sockaddr)
 
     packet.type = COMM_PTYPE_ACK;
     bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
+    packet.seqn = 0;
+    packet.length = 0;
+    packet.total_size = 1;
 
     if(__send_packet(socket_instance, client_sockaddr, &packet) != 0)
     {
@@ -407,6 +456,8 @@ int __send_command(int *socket_instance, struct sockaddr_in *client_sockaddr, ch
 
     packet.type = COMM_PTYPE_CMD;
     packet.length = strlen(buffer);
+    packet.seqn = 0;
+    packet.total_size = 1;
     bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
     strncpy(packet.payload, buffer, strlen(buffer));
 

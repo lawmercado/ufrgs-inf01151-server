@@ -85,7 +85,7 @@ int file_exists(char path[MAX_PATH_LENGTH])
 {
     struct stat st;
 
-    return stat(path, &st);
+    return stat(path, &st) == 0;
 }
 
 int file_create_dir(char path[MAX_PATH_LENGTH])

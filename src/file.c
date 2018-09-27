@@ -117,3 +117,8 @@ int file_write_bytes(FILE *file, char *buffer, int length)
 {
     return fwrite(buffer, sizeof(char), length, file);
 }
+
+int file_delete(char path[MAX_PATH_LENGTH])
+{
+    return remove(path);
+}

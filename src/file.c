@@ -51,11 +51,15 @@ int file_mac(char path[MAX_PATH_LENGTH], MACTimestamp *mac)
 {
     struct stat st;
 
+    log_debug("oioi", "nome path: %s", path);
+
     if(stat(path, &st) == 0)
     {
+        log_debug("oioi", "entrou");
         strftime(mac->m, MAX_TIMESTAMP_LENGTH, "%Y %b %d %H:%M", localtime(&st.st_mtime));
         strftime(mac->a, MAX_TIMESTAMP_LENGTH, "%Y %b %d %H:%M", localtime(&st.st_atime));
         strftime(mac->c, MAX_TIMESTAMP_LENGTH, "%Y %b %d %H:%M", localtime(&st.st_ctime));
+
 
         return 0;
     }

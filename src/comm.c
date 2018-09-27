@@ -84,9 +84,10 @@ int __comm_list_server(int *socket_instance, struct comm_client *client)
             continue;
         }
 
-        bzero((void *)&(file_temp), sizeof(file_temp));
-
         char file_path[MAX_FILENAME_LENGTH];
+
+        bzero((void *)&(file_temp), sizeof(file_temp));
+        bzero(file_path , MAX_FILENAME_LENGTH);
 
         strcat(file_path, path);
         strcat(file_path, "/");
@@ -94,7 +95,7 @@ int __comm_list_server(int *socket_instance, struct comm_client *client)
 
         strcpy(file_temp.file_name, de->d_name);
 
-        file_mac(de->d_name, &(file_temp.file_mac));
+        file_mac(file_path, &(file_temp.file_mac));
 
         printf("M: %s | A: %s | C: %s | '%s'\n", file_temp.file_mac.m, file_temp.file_mac.a, file_temp.file_mac.c, file_temp.file_name);
 

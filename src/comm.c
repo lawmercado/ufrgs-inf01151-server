@@ -118,6 +118,58 @@ int __comm_list_server(int *socket_instance, struct comm_client *client)
     return 0;
 }
 
+int __comm_get_sync_dir(int *socket_instance, struct comm_client *client)
+{
+    char path[COMM_PARAMETER_LENGTH];
+    char path_write[COMM_PARAMETER_LENGTH];
+
+    bzero(path, COMM_PARAMETER_LENGTH);
+    bzero(path_write, COMM_PARAMETER_LENGTH);
+
+    strcat(path,"sync_dir");
+
+    log_debug("comm", "path: %s", path); 
+
+    struct dirent *de;  // Pointer for directory entry 
+  
+    // opendir() returns a pointer of DIR type.  
+    DIR *dr = opendir(path); 
+  
+    if (dr == NULL)  // opendir returns NULL if couldn't open directory 
+    { 
+        log_error("comm", "Could not open current directory: %s", path); 
+        return 0; 
+    } 
+
+    int created = 0;
+
+    while ((de = readdir(dr)) != NULL) 
+    {
+        if(strcmp(de->d_name, client->username) == 0)
+        {
+            created = 1;
+        }
+    }
+
+    if(created)
+    {
+        log_debug("comm", "sync_dir_%s exists!", client->username); 
+    }
+    else
+    {
+        log_debug("comm", "sync_dir_%s doesn't exists!", client->username); 
+
+        strcat(path, "/");
+        strcat(path, client->username);
+
+        file_create_dir(path);
+    }
+
+    closedir(dr); 
+
+    return 0;
+}
+
 
 void __client_setup_list()
 {
@@ -217,9 +269,12 @@ int __server_handle_command(struct comm_client *client, char *command)
     }
     else if(strcmp(operation, "list_server") == 0)
     {
-        log_debug("sv", "chegou cmd list_sv");
-
         __comm_list_server(&(client->socket_instance), client);
+    }
+    else if(strcmp(operation, "get_sync_dir") == 0)
+    {
+        __comm_get_sync_dir(&(client->socket_instance), client);
+
     }
 
     return 0;

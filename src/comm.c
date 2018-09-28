@@ -39,9 +39,73 @@ int __receive_command(int *socket_instance, struct sockaddr_in *client_sockaddr,
 int __send_file(int *socket_instance, struct sockaddr_in *sockaddr, char path[MAX_PATH_LENGTH]);
 int __receive_file(int *socket_instance, struct sockaddr_in *sockaddr, char path[MAX_PATH_LENGTH]);
 
+int __comm_download_all_dir(int *socket_instance, struct comm_client *client, char *path)
+{
+    log_debug("comm", "chegou no download all dir: %s", path);
+
+    char path_write[COMM_PARAMETER_LENGTH];
+    bzero(path_write, COMM_PARAMETER_LENGTH);
+
+    strcat(path_write, path);
+    strcat(path_write,"/temp.txt");
+
+    struct dirent *de;  // Pointer for directory entry 
+  
+    // opendir() returns a pointer of DIR type.  
+    DIR *dr = opendir(path); 
+  
+    if (dr == NULL)  // opendir returns NULL if couldn't open directory 
+    { 
+        log_error("comm", "Could not open current directory: %s", path); 
+        return 0; 
+    } 
+
+    FILE *file = NULL;
+    file = fopen(path_write, "wb");
+
+    if(file == NULL)
+    {
+        log_error("comm", "Could not open the file in '%s'", path);
+        return -1;
+    }
+
+    while ((de = readdir(dr)) != NULL) 
+    {
+        if(strcmp(de->d_name, ".") == 0 || strcmp(de->d_name, "..") == 0 || strcmp(de->d_name, "temp.txt") == 0)
+        {
+            continue;
+        }
+
+        char file_name[MAX_FILENAME_LENGTH];
+        bzero(file_name, MAX_FILENAME_LENGTH);
+
+        strcpy(file_name, de->d_name);
+
+        log_debug("comm", "%s esta no diretorio!", de->d_name); 
+
+        fputs(file_name, file);
+        fprintf(file, "%s", "\n");
+            
+    }
+
+    fclose(file);
+
+    if(__send_file(socket_instance, client->sockaddr, path_write) == 0)
+    {
+        log_debug("comm", "%s done", client->username);
+        file_delete(path_write);
+    }
+            
+  
+    closedir(dr); 
+    
+
+    return 0;
+}
 
 int __comm_list_server(int *socket_instance, struct comm_client *client)
 {
+
     char path[COMM_PARAMETER_LENGTH];
     char path_write[COMM_PARAMETER_LENGTH];
 
@@ -97,7 +161,7 @@ int __comm_list_server(int *socket_instance, struct comm_client *client)
 
         file_mac(file_path, &(file_temp.file_mac));
 
-        printf("M: %s | A: %s | C: %s | '%s'\n", file_temp.file_mac.m, file_temp.file_mac.a, file_temp.file_mac.c, file_temp.file_name);
+        //printf("M: %s | A: %s | C: %s | '%s'\n", file_temp.file_mac.m, file_temp.file_mac.a, file_temp.file_mac.c, file_temp.file_name);
 
         fwrite(&file_temp, sizeof(file_temp), 1, file);
             
@@ -126,7 +190,11 @@ int __comm_get_sync_dir(int *socket_instance, struct comm_client *client)
     bzero(path, COMM_PARAMETER_LENGTH);
     bzero(path_write, COMM_PARAMETER_LENGTH);
 
-    strcat(path,"sync_dir");
+    strcat(path,"sync_dir");    
+
+    strcat(path_write,path);
+    strcat(path_write,"/");
+    strcat(path_write, client->username);
 
     log_debug("comm", "path: %s", path); 
 
@@ -153,7 +221,9 @@ int __comm_get_sync_dir(int *socket_instance, struct comm_client *client)
 
     if(created)
     {
-        log_debug("comm", "sync_dir_%s exists!", client->username); 
+        log_debug("comm", "sync_dir_%s exists!", client->username);
+
+        __comm_download_all_dir(socket_instance, client, path_write);
     }
     else
     {
@@ -274,7 +344,6 @@ int __server_handle_command(struct comm_client *client, char *command)
     else if(strcmp(operation, "get_sync_dir") == 0)
     {
         __comm_get_sync_dir(&(client->socket_instance), client);
-
     }
 
     return 0;

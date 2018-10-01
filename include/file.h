@@ -11,6 +11,11 @@ typedef struct {
     char c[MAX_TIMESTAMP_LENGTH];
 } MACTimestamp;
 
+typedef struct {
+    char file_name[MAX_FILENAME_LENGTH];
+    MACTimestamp file_mac;
+} FILE_TEMP;
+
 /**
  * Write a file in the specified path
  *
@@ -37,6 +42,8 @@ int file_mac(char path[MAX_PATH_LENGTH], MACTimestamp *mac);
  * @return the file size if no errors, -1 otherwise
  */
 int file_size(char path[MAX_PATH_LENGTH]);
+
+int file_delete(char path[MAX_PATH_LENGTH]);
 
 int file_get_name_from_path(char *path, char *filename);
 

@@ -335,18 +335,7 @@ void __client_print_list()
             printf("Client %s, on port %d with socket %d\n", __clients[i].username, __clients[i].port, __clients[i].socket_instance);
         }
     }
-<<<<<<< HEAD
 }
-=======
-    else if(strcmp(operation, "list_server") == 0)
-    {
-        __comm_list_server(&(client->socket_instance), client);
-    }
-    else if(strcmp(operation, "get_sync_dir") == 0)
-    {
-        __comm_get_sync_dir(&(client->socket_instance), client);
-    }
->>>>>>> 8878468a484ab114dfd1e2b0c1e1ba7d40757577
 
 int __command_response_download(struct comm_client *client, char *file)
 {
@@ -415,7 +404,7 @@ int __server_handle_command(struct comm_client *client, char *command)
     {
         __comm_get_sync_dir(&(client->socket_instance), client);
     }
-    
+
     return 0;
 }
 

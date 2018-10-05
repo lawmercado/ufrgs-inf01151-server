@@ -44,7 +44,8 @@ int __receive_file(int *socket_instance, struct sockaddr_in *sockaddr, char path
 
 int __comm_download_all_dir(int *socket_instance, struct comm_client *client, char *path)
 {
-    log_debug("comm", "chegou no download all dir: %s", path);
+
+    int file_counter = 0;
 
     char path_write[COMM_PARAMETER_LENGTH];
     bzero(path_write, COMM_PARAMETER_LENGTH);
@@ -89,7 +90,17 @@ int __comm_download_all_dir(int *socket_instance, struct comm_client *client, ch
         fputs(file_name, file);
         fprintf(file, "%s", "\n");
 
+        file_counter++;
+
     }
+
+    if(file_counter == 0)
+    {
+        fprintf(file, "DiretorioVazio");
+    }
+
+    log_debug("comm", "Quantidade de arquivos no diretorio de %s: %d", client->username, file_counter);
+
 
     fclose(file);
 
@@ -109,6 +120,7 @@ int __comm_download_all_dir(int *socket_instance, struct comm_client *client, ch
 int __comm_list_server(int *socket_instance, struct comm_client *client)
 {
 
+    int file_counter = 0;
     char path[COMM_PARAMETER_LENGTH];
     char path_write[COMM_PARAMETER_LENGTH];
 
@@ -168,9 +180,25 @@ int __comm_list_server(int *socket_instance, struct comm_client *client)
 
         fwrite(&file_temp, sizeof(file_temp), 1, file);
 
+        file_counter++;
+
     }
 
+
+    if(file_counter == 0)
+    {
+        bzero((void *)&(file_temp), sizeof(file_temp));
+
+        strcpy(file_temp.file_name, "Diretorio vazio.");
+
+        fwrite(&file_temp, sizeof(file_temp), 1, file);
+    }
+
+    log_debug("comm", "Quantidade de arquivos no diretorio de %s: %d", client->username, file_counter);
+
+
     fclose(file);
+
 
     if(__send_file(socket_instance, client->sockaddr, path_write) == 0)
     {
@@ -236,6 +264,8 @@ int __comm_get_sync_dir(int *socket_instance, struct comm_client *client)
         strcat(path, client->username);
 
         file_create_dir(path);
+
+        __comm_download_all_dir(socket_instance, client, path_write);
     }
 
     closedir(dr);

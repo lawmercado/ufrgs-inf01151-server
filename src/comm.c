@@ -65,7 +65,7 @@ int __comm_download_all_dir(int *socket_instance, struct comm_client *client, ch
     }
 
     FILE *file = NULL;
-    file = fopen(path_write, "wb");
+    file = fopen(path_write, "w");
 
     if(file == NULL)
     {
@@ -251,8 +251,6 @@ int __comm_get_sync_dir(int *socket_instance, struct comm_client *client)
     if(created)
     {
         log_debug("comm", "sync_dir_%s exists!", client->username);
-
-        __comm_download_all_dir(socket_instance, client, path_write);
     }
     else
     {
@@ -262,9 +260,9 @@ int __comm_get_sync_dir(int *socket_instance, struct comm_client *client)
         strcat(path, client->username);
 
         file_create_dir(path);
-
-        __comm_download_all_dir(socket_instance, client, path_write);
     }
+
+    __comm_download_all_dir(socket_instance, client, path_write);
 
     closedir(dr);
 

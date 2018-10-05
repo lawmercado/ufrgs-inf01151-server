@@ -87,8 +87,8 @@ int __comm_download_all_dir(int *socket_instance, struct comm_client *client, ch
 
         log_debug("comm", "%s esta no diretorio!", de->d_name);
 
-        fputs(file_name, file);
-        fprintf(file, "%s", "\n");
+        fprintf(file, "%s", file_name);
+        fprintf(file, "\n");
 
         file_counter++;
 
@@ -110,9 +110,7 @@ int __comm_download_all_dir(int *socket_instance, struct comm_client *client, ch
         file_delete(path_write);
     }
 
-
     closedir(dr);
-
 
     return 0;
 }

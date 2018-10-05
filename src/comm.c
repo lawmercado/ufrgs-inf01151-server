@@ -19,8 +19,10 @@ int __counter_client_port;
 struct comm_client __clients[COMM_MAX_CLIENT];
 
 void __client_setup_list();
+void __client_print_list();
 int __client_get_empty_list_slot();
 int __client_create(struct sockaddr_in *client_sockaddr, char username[COMM_MAX_CLIENT], int port);
+void *__server_handle_client(void *arg);
 void __client_remove(int port);
 
 void __server_init_sockaddr(struct sockaddr_in *sockaddr, int port);
@@ -30,6 +32,8 @@ int __server_handle_command(struct comm_client *client, char *command);
 
 int __command_response_upload(struct comm_client *client, char *file);
 int __command_response_download(struct comm_client *client, char *file);
+int __command_response_delete(struct comm_client *client, char *file);
+int __command_response_logout(struct comm_client *client);
 
 int __send_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
 int __receive_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
@@ -44,7 +48,6 @@ int __receive_file(int *socket_instance, struct sockaddr_in *sockaddr, char path
 
 int __comm_download_all_dir(int *socket_instance, struct comm_client *client, char *path)
 {
-
     int file_counter = 0;
 
     char path_write[COMM_PARAMETER_LENGTH];
@@ -115,7 +118,7 @@ int __comm_download_all_dir(int *socket_instance, struct comm_client *client, ch
     return 0;
 }
 
-int __comm_list_server(int *socket_instance, struct comm_client *client)
+int __command_response_list_server(int *socket_instance, struct comm_client *client)
 {
 
     int file_counter = 0;
@@ -211,7 +214,7 @@ int __comm_list_server(int *socket_instance, struct comm_client *client)
     return 0;
 }
 
-int __comm_get_sync_dir(int *socket_instance, struct comm_client *client)
+int __command_response_get_sync_dir(int *socket_instance, struct comm_client *client)
 {
     char path[COMM_PARAMETER_LENGTH];
     char path_write[COMM_PARAMETER_LENGTH];
@@ -333,6 +336,8 @@ int __client_create(struct sockaddr_in *client_sockaddr, char username[COMM_MAX_
         __clients[client_slot].sockaddr = client_sockaddr;
         __clients[client_slot].valid = 1;
 
+        pthread_create(&__clients[client_slot].thread, NULL, __server_handle_client, (void *)&client_slot);
+
         return client_slot;
     }
 
@@ -361,6 +366,24 @@ void __client_print_list()
             printf("Client %s, on port %d with socket %d\n", __clients[i].username, __clients[i].port, __clients[i].socket_instance);
         }
     }
+}
+
+void *__server_handle_client(void *arg)
+{
+    int client_slot = *((int *) arg);
+
+    do
+    {
+        char command[COMM_PPAYLOAD_LENGTH];
+        bzero(command, COMM_PPAYLOAD_LENGTH);
+
+        if(__receive_command(&__clients[client_slot].socket_instance, __clients[client_slot].sockaddr, command) == 0)
+        {
+            __server_handle_command(&__clients[client_slot], command);
+        }
+    } while(__clients[client_slot].valid == 1);
+
+    pthread_exit(0);
 }
 
 int __command_response_download(struct comm_client *client, char *file)
@@ -402,11 +425,26 @@ int __command_response_logout(struct comm_client *client)
     return 0;
 }
 
+int __command_response_delete(struct comm_client *client, char *file)
+{
+    char path[COMM_PARAMETER_LENGTH];
+    sync_get_user_file_path("sync_dir", client->username, file, path, COMM_PARAMETER_LENGTH);
+
+    if(file_delete(path) == 0)
+    {
+        log_debug("comm", "Client '%s' deleted file", client->username);
+
+        return 0;
+    }
+
+    return -1;
+}
+
 int __server_handle_command(struct comm_client *client, char *command)
 {
     char operation[COMM_COMMAND_LENGTH], parameter[COMM_PARAMETER_LENGTH];
 
-    sscanf(command, "%s %s", operation, parameter);
+    sscanf(command, "%s %[^\n\t]s", operation, parameter);
 
     log_debug("comm", "Command read '%s %s'", operation, parameter);
 
@@ -418,17 +456,21 @@ int __server_handle_command(struct comm_client *client, char *command)
     {
         return __command_response_upload(client, parameter);
     }
+    else if(strcmp(operation, "delete") == 0)
+    {
+        return __command_response_delete(client, parameter);
+    }
     else if(strcmp(operation, "logout") == 0)
     {
         return __command_response_logout(client);
     }
     else if(strcmp(operation, "list_server") == 0)
     {
-        __comm_list_server(&(client->socket_instance), client);
+        return __command_response_list_server(&(client->socket_instance), client);
     }
     else if(strcmp(operation, "get_sync_dir") == 0)
     {
-        __comm_get_sync_dir(&(client->socket_instance), client);
+        return __command_response_get_sync_dir(&(client->socket_instance), client);
     }
 
     return 0;
@@ -491,8 +533,6 @@ void __server_wait_connection()
 
             sscanf(receive_buffer, "%s %s", operation, username);
 
-
-
             if(strcmp(operation, "login") == 0)
             {
                 __counter_client_port++;
@@ -509,25 +549,10 @@ void __server_wait_connection()
                 if((client_slot = __client_create(&client_sockaddr, username, __counter_client_port)) < 0)
                 {
                     log_debug("comm", "Could not connect logged");
-                    // TODO: Send error
                 }
 
-                log_debug("comm", "Client logged");
-
                 __client_print_list();
-
-                do
-                {
-                    char command[COMM_PPAYLOAD_LENGTH];
-                    bzero(command, COMM_PPAYLOAD_LENGTH);
-
-                    if(__receive_command(&__clients[client_slot].socket_instance, __clients[client_slot].sockaddr, command) == 0)
-                    {
-                        __server_handle_command(&__clients[client_slot], command);
-                    }
-                } while(__clients[client_slot].valid == 1);
             }
-
         }
     }
 }
@@ -570,38 +595,16 @@ int __receive_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, 
 
     int status;
     socklen_t from_length = sizeof(struct sockaddr_in);
-    struct pollfd fd;
-    int res;
 
-    fd.fd = *socket_instance;
-    fd.events = POLLIN;
+    // Receives an ack from the server
+    status = recvfrom(*socket_instance, (void *)packet, sizeof(*packet), 0, (struct sockaddr *)client_sockaddr, &from_length);
 
-    res = poll(&fd, 1, COMM_TIMEOUT);
-
-    if(res == 0)
+    if(status < 0)
     {
-        log_error("comm", "Connection timed out");
-
-        return COMM_TIMEOUT_ERROR;;
-    }
-    else if(res == -1)
-    {
-        log_error("comm", "Polling error");
-
         return -1;
     }
-    else
-    {
-        // Receives an ack from the server
-        status = recvfrom(*socket_instance, (void *)packet, sizeof(*packet), 0, (struct sockaddr *)client_sockaddr, &from_length);
 
-        if(status < 0)
-        {
-            return -1;
-        }
-
-        return 0;
-    }
+    return 0;
 }
 
 int __send_ack(int *socket_instance, struct sockaddr_in *client_sockaddr)

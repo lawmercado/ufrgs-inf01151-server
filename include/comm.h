@@ -1,6 +1,7 @@
 #ifndef __COMM_H__
 #define __COMM_H__
 
+#include <pthread.h>
 #include <netdb.h>
 
 #define COMM_COMMAND_LENGTH 64
@@ -26,6 +27,7 @@ struct comm_packet {
 struct comm_client {
     char username[COMM_USERNAME_LENGTH];
     int socket_instance;
+    pthread_t thread;
     struct sockaddr_in *sockaddr;
     int port; // Port where we should receive the data from the client
     int valid;

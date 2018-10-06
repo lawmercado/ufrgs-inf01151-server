@@ -358,14 +358,19 @@ void __client_remove(int port)
     }
 }
 
-int __client_propagate(char *username, char *file, char *action)
+int __client_propagate(struct comm_client *client, char *file, char *action, int self)
 {
     int i;
 
     for(i = 0; i < COMM_MAX_CLIENT; i++)
     {
-        if(strcmp(__clients[i].username, username) == 0)
+        if(strcmp(__clients[i].username, client->username) == 0)
         {
+            if(!self && __client_get_slot_by_port(client->port) == i)
+            {
+                continue;
+            }
+
             strcpy(__clients[i].to_sync_file, file);
             strcpy(__clients[i].to_sync_action, action);
         }
@@ -431,7 +436,7 @@ int __command_response_upload(struct comm_client *client, char *file)
     {
         log_debug("comm", "Client '%s' done uploading", client->username);
 
-        __client_propagate(client->username, file, "download");
+        __client_propagate(client, file, "download", 1);
 
         return 0;
     }
@@ -455,7 +460,7 @@ int __command_response_delete(struct comm_client *client, char *file)
     {
         log_debug("comm", "Client '%s' deleted file", client->username);
 
-        __client_propagate(client->username, file, "delete");
+        __client_propagate(client, file, "delete", 0);
 
         return 0;
     }

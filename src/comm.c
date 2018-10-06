@@ -33,6 +33,7 @@ int __server_handle_command(struct comm_client *client, char *command);
 int __command_response_upload(struct comm_client *client, char *file);
 int __command_response_download(struct comm_client *client, char *file);
 int __command_response_delete(struct comm_client *client, char *file);
+int __command_response_synchronize(struct comm_client *client);
 int __command_response_logout(struct comm_client *client);
 
 int __send_packet(int *socket_instance, struct sockaddr_in *client_sockaddr, struct comm_packet *packet);
@@ -336,6 +337,8 @@ int __client_create(struct sockaddr_in *client_sockaddr, char username[COMM_MAX_
         __clients[client_slot].sockaddr = client_sockaddr;
         __clients[client_slot].valid = 1;
 
+        bzero(__clients[client_slot].to_sync_file, MAX_FILENAME_LENGTH);
+
         pthread_create(&__clients[client_slot].thread, NULL, __server_handle_client, (void *)&client_slot);
 
         return client_slot;
@@ -353,6 +356,22 @@ void __client_remove(int port)
         close(__clients[client_slot].socket_instance);
         __clients[client_slot].valid = 0;
     }
+}
+
+int __client_propagate(char *username, char *file, char *action)
+{
+    int i;
+
+    for(i = 0; i < COMM_MAX_CLIENT; i++)
+    {
+        if(strcmp(__clients[i].username, username) == 0)
+        {
+            strcpy(__clients[i].to_sync_file, file);
+            strcpy(__clients[i].to_sync_action, action);
+        }
+    }
+
+    return 0;
 }
 
 void __client_print_list()
@@ -412,6 +431,8 @@ int __command_response_upload(struct comm_client *client, char *file)
     {
         log_debug("comm", "Client '%s' done uploading", client->username);
 
+        __client_propagate(client->username, file, "download");
+
         return 0;
     }
 
@@ -433,6 +454,38 @@ int __command_response_delete(struct comm_client *client, char *file)
     if(file_delete(path) == 0)
     {
         log_debug("comm", "Client '%s' deleted file", client->username);
+
+        __client_propagate(client->username, file, "delete");
+
+        return 0;
+    }
+
+    return -1;
+}
+
+int __command_response_synchronize(struct comm_client *client)
+{
+    struct comm_packet packet;
+
+    packet.type = COMM_PTYPE_DATA;
+    bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
+
+    if(strlen(client->to_sync_file) > 0)
+    {
+        sprintf(packet.payload, "%s %s", client->to_sync_action, client->to_sync_file);
+    }
+    else
+    {
+        strcpy(packet.payload, "NoFile");
+    }
+
+    if(__send_data(&client->socket_instance, client->sockaddr, &packet) == 0)
+    {
+        if(strlen(client->to_sync_file) > 0)
+        {
+            bzero(client->to_sync_file, MAX_FILENAME_LENGTH);
+            bzero(client->to_sync_action, COMM_COMMAND_LENGTH);
+        }
 
         return 0;
     }
@@ -459,6 +512,10 @@ int __server_handle_command(struct comm_client *client, char *command)
     else if(strcmp(operation, "delete") == 0)
     {
         return __command_response_delete(client, parameter);
+    }
+    else if(strcmp(operation, "synchronize") == 0)
+    {
+        return __command_response_synchronize(client);
     }
     else if(strcmp(operation, "logout") == 0)
     {

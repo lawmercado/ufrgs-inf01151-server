@@ -3,6 +3,7 @@
 
 #include <pthread.h>
 #include <netdb.h>
+#include "file.h"
 
 #define COMM_COMMAND_LENGTH 64
 #define COMM_USERNAME_LENGTH 64
@@ -11,7 +12,7 @@
 #define COMM_TIMEOUT 20000
 #define COMM_TIMEOUT_ERROR 2
 
-#define COMM_PPAYLOAD_LENGTH 256
+#define COMM_PPAYLOAD_LENGTH 512
 #define COMM_PTYPE_DATA 0
 #define COMM_PTYPE_CMD 1
 #define COMM_PTYPE_ACK 2
@@ -26,6 +27,8 @@ struct comm_packet {
 
 struct comm_client {
     char username[COMM_USERNAME_LENGTH];
+    char to_sync_file[MAX_FILENAME_LENGTH];
+    char to_sync_action[COMM_COMMAND_LENGTH];
     int socket_instance;
     pthread_t thread;
     struct sockaddr_in *sockaddr;

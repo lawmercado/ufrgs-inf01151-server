@@ -191,7 +191,7 @@ int __command_response_list_server(int *socket_instance, struct comm_client *cli
     {
         bzero((void *)&(file_temp), sizeof(file_temp));
 
-        strcpy(file_temp.file_name, "Diretorio vazio.");
+        strcpy(file_temp.file_name, "DiretorioVazio");
 
         fwrite(&file_temp, sizeof(file_temp), 1, file);
     }

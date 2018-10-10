@@ -1,2 +1,2 @@
 # Ignores the syncronization folder
-sync_dir/
+sync_dir/*

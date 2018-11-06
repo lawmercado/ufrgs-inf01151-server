@@ -327,6 +327,8 @@ int __command_response_synchronize(struct comm_client *client)
             bzero(client->to_sync_action, COMM_COMMAND_LENGTH);
         }
 
+        log_info("comm", "Socket %d: got the file to sync", client->socket_instance);
+
         pthread_mutex_unlock(&__client_handling_mutex);
 
         return 0;
@@ -339,7 +341,7 @@ int __command_response_synchronize(struct comm_client *client)
 
 int __command_response_logout(struct comm_client *client)
 {
-    log_info("comm", "Client '%s' signed out", client->username);
+    log_info("comm", "Socket %d: '%s' signed out", client->socket_instance, client->username);
 
     __client_remove(client->port);
 

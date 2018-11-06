@@ -1,55 +1,34 @@
 #ifndef __FILE_H__
 #define __FILE_H__
 
-#define MAX_FILENAME_LENGTH 255
-#define MAX_PATH_LENGTH 4096
-#define MAX_TIMESTAMP_LENGTH 20
+#define FILE_NAME_LENGTH 255
+#define FILE_PATH_LENGTH 4096
+#define FILE_TIMESTAMP_LENGTH 20
 
-typedef struct {
-    char m[MAX_TIMESTAMP_LENGTH];
-    char a[MAX_TIMESTAMP_LENGTH];
-    char c[MAX_TIMESTAMP_LENGTH];
-} MACTimestamp;
+struct file_mactimestamp {
+    char m[FILE_TIMESTAMP_LENGTH];
+    char a[FILE_TIMESTAMP_LENGTH];
+    char c[FILE_TIMESTAMP_LENGTH];
+};
 
-typedef struct {
-    char file_name[MAX_FILENAME_LENGTH];
-    MACTimestamp file_mac;
-} FILE_TEMP;
+struct file_status {
+    char file_name[FILE_NAME_LENGTH];
+    struct file_mactimestamp file_mac;
+};
 
-/**
- * Write a file in the specified path
- *
- * @param char* path The path of the file
- * @param char* buffer The content of the file
- * @param int length The buffer size of the file
- * @return 0 if no errors, -1 otherwise
- */
-int file_write_buffer(char path[MAX_PATH_LENGTH], char *buffer, int length);
+int file_write_buffer(char path[FILE_PATH_LENGTH], char *buffer, int length);
 
-/**
- * Fills a MACTimestamp struct with the corresponding times for the file
- *
- * @param char* path The path of the file
- * @param MACTimestamp* mac The struct to initialize
- * @return 0 if no errors, -1 otherwise
- */
-int file_mac(char path[MAX_PATH_LENGTH], MACTimestamp *mac);
+int file_mac(char path[FILE_PATH_LENGTH], struct file_mactimestamp *mac);
 
-/**
- * Gets the file size for the specified file
- *
- * @param char* path The path of the file
- * @return the file size if no errors, -1 otherwise
- */
-int file_size(char path[MAX_PATH_LENGTH]);
+int file_size(char path[FILE_PATH_LENGTH]);
 
-int file_delete(char path[MAX_PATH_LENGTH]);
+int file_delete(char path[FILE_PATH_LENGTH]);
 
 int file_get_name_from_path(char *path, char *filename);
 
-int file_exists(char path[MAX_PATH_LENGTH]);
+int file_exists(char path[FILE_PATH_LENGTH]);
 
-int file_create_dir(char path[MAX_PATH_LENGTH]);
+int file_create_dir(char path[FILE_PATH_LENGTH]);
 
 int file_read_bytes(FILE *file, char *buffer, int length);
 

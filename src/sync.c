@@ -9,9 +9,9 @@
 
 int sync_init(char *username, char* dir_path)
 {
-    char path[MAX_PATH_LENGTH];
+    char path[FILE_PATH_LENGTH];
 
-    bzero(path, MAX_PATH_LENGTH);
+    bzero(path, FILE_PATH_LENGTH);
 
     strcat(path, dir_path);
     strcat(path, "/");
@@ -46,10 +46,10 @@ int sync_list_files(char *username, char* dir_path)
 {
     DIR *watched_dir;
     struct dirent *entry;
-    MACTimestamp entryMAC;
-    char path[MAX_PATH_LENGTH];
+    struct file_mactimestamp entryMAC;
+    char path[FILE_PATH_LENGTH];
 
-    sync_get_user_dir_path(dir_path, username, path, MAX_PATH_LENGTH);
+    sync_get_user_dir_path(dir_path, username, path, FILE_PATH_LENGTH);
 
     watched_dir = opendir(path);
 
@@ -62,7 +62,7 @@ int sync_list_files(char *username, char* dir_path)
                 continue;
             }
 
-            sync_get_user_file_path(dir_path, username, entry->d_name, path, MAX_PATH_LENGTH);
+            sync_get_user_file_path(dir_path, username, entry->d_name, path, FILE_PATH_LENGTH);
 
             if(file_mac(path, &entryMAC) == 0)
             {

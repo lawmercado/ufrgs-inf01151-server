@@ -7,4 +7,6 @@ void log_debug(char* module_name, const char* message, ...);
 
 void log_error(char* module_name, const char* message, ...);
 
+void log_info(char* module_name, const char* message, ...);
+
 #endif

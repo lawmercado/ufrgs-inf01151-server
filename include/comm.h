@@ -9,8 +9,9 @@
 #define COMM_USERNAME_LENGTH 64
 #define COMM_PARAMETER_LENGTH 128
 #define COMM_MAX_CLIENT 128
+
 #define COMM_TIMEOUT 20000
-#define COMM_TIMEOUT_ERROR 2
+#define COMM_ERROR_TIMEOUT -2
 
 #define COMM_PPAYLOAD_LENGTH 512
 #define COMM_PTYPE_DATA 0
@@ -27,7 +28,7 @@ struct comm_packet {
 
 struct comm_client {
     char username[COMM_USERNAME_LENGTH];
-    char to_sync_file[MAX_FILENAME_LENGTH];
+    char to_sync_file[FILE_NAME_LENGTH];
     char to_sync_action[COMM_COMMAND_LENGTH];
     int socket_instance;
     pthread_t thread;

@@ -9,6 +9,7 @@
 #define COMM_USERNAME_LENGTH 64
 #define COMM_PARAMETER_LENGTH 128
 #define COMM_MAX_CLIENT 128
+#define COMM_RECEIVE_BUFFER_LENGTH 10
 
 #define COMM_TIMEOUT 20000
 #define COMM_ERROR_TIMEOUT -2
@@ -26,15 +27,21 @@ struct comm_packet {
     char payload[COMM_PPAYLOAD_LENGTH];
 };
 
+struct comm_entity {
+    int socket_instance;
+    struct sockaddr_in *sockaddr;
+    struct comm_packet buffer[COMM_RECEIVE_BUFFER_LENGTH];
+    int idx_buffer;
+};
+
 struct comm_client {
     char username[COMM_USERNAME_LENGTH];
     char to_sync_file[FILE_NAME_LENGTH];
     char to_sync_action[COMM_COMMAND_LENGTH];
-    int socket_instance;
     pthread_t thread;
-    struct sockaddr_in *sockaddr;
     int port; // Port where we should receive the data from the client
     int valid;
+    struct comm_entity entity;
 };
 
 int comm_init(int port);

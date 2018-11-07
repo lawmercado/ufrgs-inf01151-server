@@ -441,7 +441,7 @@ int __client_create(struct sockaddr_in client_sockaddr, char username[COMM_MAX_C
         }
 
         __clients[client_slot].port = port;
-        __clients[client_slot].entity.sockaddr = &client_sockaddr;
+        __clients[client_slot].entity.sockaddr = client_sockaddr;
         __clients[client_slot].valid = 1;
         __clients[client_slot].entity.idx_buffer = -1;
 
@@ -484,7 +484,6 @@ void __client_remove(int port)
     {
         close(__clients[client_slot].entity.socket_instance);
         __clients[client_slot].valid = 0;
-        __clients[client_slot].entity.sockaddr = NULL;
     }
 
     pthread_mutex_unlock(&__client_handling_mutex);
@@ -604,7 +603,7 @@ void __server_wait_connection()
                     __counter_client_port--;
                 }
 
-                if(__client_create(*(__server_entity.sockaddr), username, __counter_client_port) < 0)
+                if(__client_create(__server_entity.sockaddr, username, __counter_client_port) < 0)
                 {
                     log_debug("comm", "Could not connect logged");
                 }
@@ -623,7 +622,7 @@ int comm_init(int port)
 
     __server_entity.socket_instance = __server_create_socket(&sockaddr);
     __server_entity.idx_buffer = -1;
-    __server_entity.sockaddr = &sockaddr;
+    __server_entity.sockaddr = sockaddr;
 
     log_info("comm", "Server is socket %d", __server_entity.socket_instance);
 
@@ -636,7 +635,7 @@ int comm_init(int port)
 
 int __send_packet(struct comm_entity *to, struct comm_packet *packet)
 {
-    int status = sendto(to->socket_instance, (void *)packet, sizeof(struct comm_packet), 0, (struct sockaddr *)to->sockaddr, sizeof(struct sockaddr));
+    int status = sendto(to->socket_instance, (void *)packet, sizeof(struct comm_packet), 0, (struct sockaddr *)&(to->sockaddr), sizeof(struct sockaddr));
 
     if(status < 0)
     {
@@ -671,7 +670,7 @@ int __receive_packet(struct comm_entity *to, struct comm_packet *packet)
     else
     {
         socklen_t from_length = sizeof(struct sockaddr_in);
-        int status = recvfrom(to->socket_instance, (void *)packet, sizeof(*packet), 0, (struct sockaddr *)to->sockaddr, &from_length);
+        int status = recvfrom(to->socket_instance, (void *)packet, sizeof(*packet), 0, (struct sockaddr *)&(to->sockaddr), &from_length);
 
         if(status < 0)
         {
@@ -750,7 +749,7 @@ int __save_packet_in_buffer(struct comm_entity *entity, struct comm_packet *pack
     }
     
     entity->idx_buffer = entity->idx_buffer + 1;
-    memcpy(&(entity->buffer[entity->idx_buffer]), packet, sizeof(struct comm_packet));
+    entity->buffer[entity->idx_buffer] = *packet;
 
     return 0;
  }
@@ -764,7 +763,7 @@ int __get_packet_in_buffer(struct comm_entity *entity, struct comm_packet *packe
         return -1;
     }
     
-    memcpy(packet, &(entity->buffer[entity->idx_buffer]), sizeof(struct comm_packet));
+    *packet = entity->buffer[entity->idx_buffer];
     entity->idx_buffer = entity->idx_buffer - 1;
 
     return 0;

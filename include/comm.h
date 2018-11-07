@@ -29,7 +29,7 @@ struct comm_packet {
 
 struct comm_entity {
     int socket_instance;
-    struct sockaddr_in *sockaddr;
+    struct sockaddr_in sockaddr;
     struct comm_packet buffer[COMM_RECEIVE_BUFFER_LENGTH];
     int idx_buffer;
 };

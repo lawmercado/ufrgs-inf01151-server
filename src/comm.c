@@ -8,11 +8,12 @@
 #include <netdb.h>
 #include <poll.h>
 #include <math.h>
+#include <dirent.h>
 #include "comm.h"
 #include "log.h"
 #include "file.h"
 #include "sync.h"
-#include <dirent.h>
+#include "utils.h"
 
 int __counter_client_port;
 struct comm_entity __server_entity;
@@ -20,19 +21,10 @@ struct comm_client __clients[COMM_MAX_CLIENT];
 
 pthread_mutex_t __client_handling_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-int __client_create(struct sockaddr_in client_sockaddr, char username[COMM_MAX_CLIENT], int port);
+int __client_create(struct sockaddr_in client_sockaddr, char username[COMM_MAX_CLIENT], int port, int receive_port);
 void __client_remove(int port);
-int __client_propagate(struct comm_client *client, char *file, char *action, int self);
-
-void __server_init_sockaddr(struct sockaddr_in *sockaddr, int port);
-int __server_create_socket(struct sockaddr_in *server_sockaddr);
-
-int __send_data(struct comm_entity *from, struct comm_packet *packet);
-int __receive_data(struct comm_entity *from, struct comm_packet *packet);
-int __send_command(struct comm_entity *from, char buffer[COMM_PPAYLOAD_LENGTH]);
-int __receive_command(struct comm_entity *from, char buffer[COMM_PPAYLOAD_LENGTH]);
-int __send_file(struct comm_entity *to, char path[FILE_PATH_LENGTH]);
-int __receive_file(struct comm_entity *from, char path[FILE_PATH_LENGTH]);
+int __client_propagate_synchronization(struct comm_client *client, char *file, int self);
+int __client_propagate_deletion(struct comm_client *client, char *file, int self);
 
 int __command_response_download(struct comm_client *client, char *file)
 {
@@ -40,7 +32,7 @@ int __command_response_download(struct comm_client *client, char *file)
     sync_get_user_file_path("sync_dir", client->username, file, path, COMM_PARAMETER_LENGTH);
     int result;
 
-    if((result = __send_file(&(client->entity), path)) == 0)
+    if((result = comm_send_file(&(client->entity), path)) == 0)
     {
         log_info("comm", "Socket %d: '%s' done downloading", client->entity.socket_instance, client->username);
 
@@ -56,11 +48,11 @@ int __command_response_upload(struct comm_client *client, char *file)
     sync_get_user_file_path("sync_dir", client->username, file, path, COMM_PARAMETER_LENGTH);
     int result;
 
-    if((result = __receive_file(&(client->entity), path)) == 0)
+    if((result = comm_receive_file(&(client->entity), path)) == 0)
     {
         log_info("comm", "Socket %d: '%s' done uploading", client->entity.socket_instance, client->username);
 
-        __client_propagate(client, file, "download", 1);
+        __client_propagate_synchronization(client, file, 1);
 
         return 0;
     }
@@ -77,7 +69,7 @@ int __command_response_delete(struct comm_client *client, char *file)
     {
         log_info("comm", "Socket %d: '%s' deleted file", client->entity.socket_instance, client->username);
 
-        __client_propagate(client, file, "delete", 0);
+        __client_propagate_deletion(client, file, 0);
 
         return 0;
     }
@@ -162,7 +154,7 @@ int __command_response_list_server(struct comm_client *client)
 
     fclose(file);
     
-    if(__send_file(&(client->entity), path_write) == 0)
+    if(comm_send_file(&(client->entity), path_write) == 0)
     {
         log_info("comm", "Socket %d: '%s' done listing", client->entity.socket_instance, client->username);
         file_delete(path_write);
@@ -229,7 +221,7 @@ int __command_response_get_sync_dir_download_all(struct comm_client *client, cha
 
     fclose(file);
 
-    if(__send_file(&(client->entity), path_write) == 0)
+    if(comm_send_file(&(client->entity), path_write) == 0)
     {
         log_info("comm", "Socket %d: '%s' done listing files to download", client->entity.socket_instance, client->username);
         file_delete(path_write);
@@ -298,44 +290,6 @@ int __command_response_get_sync_dir(struct comm_client *client)
     return 0;
 }
 
-int __command_response_synchronize(struct comm_client *client)
-{
-    pthread_mutex_lock(&__client_handling_mutex);
-
-    struct comm_packet packet;
-
-    packet.type = COMM_PTYPE_DATA;
-    bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
-
-    if(strlen(client->to_sync_file) > 0)
-    {
-        sprintf(packet.payload, "%s %s", client->to_sync_action, client->to_sync_file);
-    }
-    else
-    {
-        strcpy(packet.payload, "NoFile");
-    }
-
-    if(__send_data(&(client->entity), &packet) == 0)
-    {
-        if(strlen(client->to_sync_file) > 0)
-        {
-            bzero(client->to_sync_file, FILE_NAME_LENGTH);
-            bzero(client->to_sync_action, COMM_COMMAND_LENGTH);
-        }
-
-        log_info("comm", "Socket %d: check for file to sync", client->entity.socket_instance);
-
-        pthread_mutex_unlock(&__client_handling_mutex);
-
-        return 0;
-    }
-
-    pthread_mutex_unlock(&__client_handling_mutex);
-
-    return -1;
-}
-
 int __command_response_logout(struct comm_client *client)
 {
     log_info("comm", "Socket %d: '%s' signed out", client->entity.socket_instance, client->username);
@@ -373,10 +327,6 @@ int __client_handle_command(struct comm_client *client, char *command)
     {
         return __command_response_get_sync_dir(client);
     }
-    else if(strcmp(operation, "synchronize") == 0)
-    {
-        return __command_response_synchronize(client);
-    }
     else if(strcmp(operation, "logout") == 0)
     {
         return __command_response_logout(client);
@@ -409,7 +359,7 @@ void *__client_handler(void *arg)
         char command[COMM_PPAYLOAD_LENGTH];
         bzero(command, COMM_PPAYLOAD_LENGTH);
 
-        if(__receive_command(&(__clients[client_slot].entity), command) == 0)
+        if(comm_receive_command(&(__clients[client_slot].entity), command) == 0)
         {
             __client_handle_command(&__clients[client_slot], command);
         }
@@ -419,20 +369,21 @@ void *__client_handler(void *arg)
     pthread_exit(0);
 }
 
-int __client_create(struct sockaddr_in client_sockaddr, char username[COMM_MAX_CLIENT], int port)
+int __client_create(struct sockaddr_in client_sockaddr, char username[COMM_MAX_CLIENT], int port, int receive_port)
 {
     pthread_mutex_lock(&__client_handling_mutex);
 
     int client_slot = __client_get_empty_list_slot();
     struct sockaddr_in server_sockaddr;
 
-    __server_init_sockaddr(&server_sockaddr, port);
+    utils_init_sockaddr(&server_sockaddr, port, INADDR_ANY);
 
     if(client_slot != -1)
     {
         strncpy(__clients[client_slot].username, username, strlen(username));
-        __clients[client_slot].entity.socket_instance = __server_create_socket(&server_sockaddr);
-
+        __clients[client_slot].valid = 1;
+        
+        __clients[client_slot].entity.socket_instance = utils_create_binded_socket(&server_sockaddr);
         if(__clients[client_slot].entity.socket_instance == -1)
         {
             log_error("comm", "Could not create socket instance");
@@ -442,10 +393,20 @@ int __client_create(struct sockaddr_in client_sockaddr, char username[COMM_MAX_C
 
         __clients[client_slot].port = port;
         __clients[client_slot].entity.sockaddr = client_sockaddr;
-        __clients[client_slot].valid = 1;
         __clients[client_slot].entity.idx_buffer = -1;
 
-        bzero(__clients[client_slot].to_sync_file, FILE_NAME_LENGTH);
+        __clients[client_slot].receiver_entity.socket_instance = utils_create_socket();
+        if(__clients[client_slot].receiver_entity.socket_instance == -1)
+        {
+            log_error("comm", "Could not create receiver socket instance");
+
+            return -1;
+        }
+
+        __clients[client_slot].receiver_port = receive_port;
+        __clients[client_slot].receiver_entity.sockaddr = client_sockaddr;
+        utils_init_sockaddr(&(__clients[client_slot].receiver_entity.sockaddr), receive_port, client_sockaddr.sin_addr.s_addr);
+        __clients[client_slot].receiver_entity.idx_buffer = -1;
 
         pthread_mutex_unlock(&__client_handling_mutex);
 
@@ -489,7 +450,7 @@ void __client_remove(int port)
     pthread_mutex_unlock(&__client_handling_mutex);
 }
 
-int __client_propagate(struct comm_client *client, char *file, char *action, int self)
+int __client_propagate_synchronization(struct comm_client *client, char *file, int self)
 {
     pthread_mutex_lock(&__client_handling_mutex);
 
@@ -504,10 +465,51 @@ int __client_propagate(struct comm_client *client, char *file, char *action, int
                 continue;
             }
 
-            log_info("comm", "Propagation of file %s, action %s", file, action);
+            char command[COMM_PPAYLOAD_LENGTH] = "";
+            char path[FILE_PATH_LENGTH] = "";
 
-            strcpy(__clients[i].to_sync_file, file);
-            strcpy(__clients[i].to_sync_action, action);
+            sprintf(command, "synchronize %s", file);
+
+            sync_get_user_file_path("sync_dir", client->username, file, path, FILE_PATH_LENGTH);
+
+            if(comm_send_command(&(client->receiver_entity), command) == 0)
+            {
+                if(comm_send_file(&(client->receiver_entity), path) == 0)
+                {
+                    log_info("comm", "Client propagated synchronization");
+                }
+            }
+        }
+    }
+
+    pthread_mutex_unlock(&__client_handling_mutex);
+
+    return 0;
+}
+
+int __client_propagate_deletion(struct comm_client *client, char *file, int self)
+{
+    pthread_mutex_lock(&__client_handling_mutex);
+
+    int i;
+
+    for(i = 0; i < COMM_MAX_CLIENT; i++)
+    {
+        if(strcmp(__clients[i].username, client->username) == 0)
+        {
+            if(!self && __client_get_slot_by_port(client->port) == i)
+            {
+                continue;
+            }
+
+            char command[COMM_PPAYLOAD_LENGTH] = "";
+
+            sprintf(command, "delete %s", file);
+            
+            if(comm_send_command(&(client->receiver_entity), command) == 0)
+            {
+                log_info("comm", "Client propagated deletion");
+            }
         }
     }
 
@@ -543,36 +545,6 @@ void __client_setup_list()
     pthread_mutex_unlock(&__client_handling_mutex);
 }
 
-void __server_init_sockaddr(struct sockaddr_in *sockaddr, int port)
-{
-    sockaddr->sin_family = AF_INET;
-	sockaddr->sin_port = htons(port);
-	sockaddr->sin_addr.s_addr = INADDR_ANY;
-	bzero((void *)&(sockaddr->sin_zero), sizeof(sockaddr->sin_zero));
-}
-
-int __server_create_socket(struct sockaddr_in *server_sockaddr)
-{
-    int socket_instance;
-
-    if((socket_instance = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
-    {
-		log_error("comm", "Could not create a socket instance");
-
-        return -1;
-	}
-
-	if(bind(socket_instance, (struct sockaddr *)server_sockaddr, sizeof(struct sockaddr)) < 0)
-    {
-		log_error("comm", "Could not bind");
-
-        close(socket_instance);
-		return -1;
-	}
-
-    return socket_instance;
-}
-
 void __server_wait_connection()
 {
     while(1)
@@ -582,15 +554,16 @@ void __server_wait_connection()
 
         log_info("comm", "Server waiting connections...");
 
-        if(__receive_command(&(__server_entity), receive_buffer) == 0)
+        if(comm_receive_command(&(__server_entity), receive_buffer) == 0)
         {
             char operation[COMM_COMMAND_LENGTH], username[COMM_USERNAME_LENGTH];
+            int port;
 
             bzero(operation, COMM_COMMAND_LENGTH);
             bzero(username, COMM_USERNAME_LENGTH);
             bzero(packet.payload, COMM_PPAYLOAD_LENGTH);
 
-            sscanf(receive_buffer, "%s %s", operation, username);
+            sscanf(receive_buffer, "%s %s %d", operation, username, &port);
 
             if(strcmp(operation, "login") == 0)
             {
@@ -598,12 +571,12 @@ void __server_wait_connection()
 
                 sprintf(packet.payload, "%d", __counter_client_port);
 
-                if(__send_data(&(__server_entity), &packet) != 0)
+                if(comm_send_data(&(__server_entity), &packet) != 0)
                 {
                     __counter_client_port--;
                 }
-
-                if(__client_create(__server_entity.sockaddr, username, __counter_client_port) < 0)
+                
+                if(__client_create(__server_entity.sockaddr, username, __counter_client_port, port) < 0)
                 {
                     log_debug("comm", "Could not connect logged");
                 }
@@ -614,19 +587,10 @@ void __server_wait_connection()
     }
 }
 
-int comm_init(int port)
+int comm_init(struct comm_entity entity)
 {
-    struct sockaddr_in sockaddr;
-
-	__server_init_sockaddr(&sockaddr, port);
-
-    __server_entity.socket_instance = __server_create_socket(&sockaddr);
-    __server_entity.idx_buffer = -1;
-    __server_entity.sockaddr = sockaddr;
-
-    log_info("comm", "Server is socket %d", __server_entity.socket_instance);
-
-    __counter_client_port = port;
+    __server_entity = entity;
+    __counter_client_port = utils_get_port((struct sockaddr *)&(entity.sockaddr));
 
     __server_wait_connection();
 
@@ -657,7 +621,7 @@ int __receive_packet(struct comm_entity *to, struct comm_packet *packet)
 
     if(poll_status == 0)
     {
-        log_error("comm", "Socket: %d, Connection timed out", to->socket_instance);
+        log_debug("comm", "Socket: %d, Connection timed out", to->socket_instance);
 
         return COMM_ERROR_TIMEOUT;
     }
@@ -669,7 +633,7 @@ int __receive_packet(struct comm_entity *to, struct comm_packet *packet)
     }
     else
     {
-        socklen_t from_length = sizeof(struct sockaddr_in);
+        socklen_t from_length = sizeof(to->sockaddr);
         int status = recvfrom(to->socket_instance, (void *)packet, sizeof(*packet), 0, (struct sockaddr *)&(to->sockaddr), &from_length);
 
         if(status < 0)
@@ -794,11 +758,21 @@ int __reliable_receive_packet(struct comm_entity *from)
 {
     struct comm_packet packet;
     int status = -1;
+    int timeout_count = 0;
 
     do
     {
         status = __receive_packet(from, &packet);
 
+        if(status == COMM_ERROR_TIMEOUT)
+        {
+            timeout_count++;
+
+            if(timeout_count == COMM_MAX_TIMEOUTS)
+            {
+                return -1;
+            }
+        }
     } while(status == COMM_ERROR_TIMEOUT);
 
     if(!__is_packet_already_in_buffer(from, &packet))
@@ -822,7 +796,7 @@ int __reliable_receive_packet(struct comm_entity *from)
     return -1;
 }
 
-int __send_data(struct comm_entity *to, struct comm_packet *packet)
+int comm_send_data(struct comm_entity *to, struct comm_packet *packet)
 {
     log_debug("comm", "Socket: %d, Sending data!", to->socket_instance);
 
@@ -838,7 +812,7 @@ int __send_data(struct comm_entity *to, struct comm_packet *packet)
     return 0;
 }
 
-int __receive_data(struct comm_entity *from, struct comm_packet *packet)
+int comm_receive_data(struct comm_entity *from, struct comm_packet *packet)
 {
     log_debug("comm", "Socket: %d, Receiving data!", from->socket_instance);
 
@@ -864,7 +838,7 @@ int __receive_data(struct comm_entity *from, struct comm_packet *packet)
     return 0;
 }
 
-int __send_command(struct comm_entity *to, char buffer[COMM_PPAYLOAD_LENGTH])
+int comm_send_command(struct comm_entity *to, char buffer[COMM_PPAYLOAD_LENGTH])
 {
     log_debug("comm", "Socket: %d, Sending command!", to->socket_instance);
 
@@ -887,7 +861,7 @@ int __send_command(struct comm_entity *to, char buffer[COMM_PPAYLOAD_LENGTH])
     return 0;
 }
 
-int __receive_command(struct comm_entity *from, char buffer[COMM_PPAYLOAD_LENGTH])
+int comm_receive_command(struct comm_entity *from, char buffer[COMM_PPAYLOAD_LENGTH])
 {
     log_debug("comm", "Socket: %d, Receiving command!", from->socket_instance);
 
@@ -918,7 +892,7 @@ int __receive_command(struct comm_entity *from, char buffer[COMM_PPAYLOAD_LENGTH
     return 0;
 }
 
-int __send_file(struct comm_entity *to, char path[FILE_PATH_LENGTH])
+int comm_send_file(struct comm_entity *to, char path[FILE_PATH_LENGTH])
 {
     FILE *file = NULL;
     int i;
@@ -944,14 +918,14 @@ int __send_file(struct comm_entity *to, char path[FILE_PATH_LENGTH])
         packet.total_size = num_packets;
         packet.seqn = i;
 
-        __send_data(to, &packet);
+        comm_send_data(to, &packet);
     }
 
     fclose(file);
     return 0;
 }
 
-int __receive_file(struct comm_entity *from, char path[FILE_PATH_LENGTH])
+int comm_receive_file(struct comm_entity *from, char path[FILE_PATH_LENGTH])
 {
     FILE *file = NULL;
     int i;
@@ -966,13 +940,13 @@ int __receive_file(struct comm_entity *from, char path[FILE_PATH_LENGTH])
         return -1;
     }
 
-    if(__receive_data(from, &packet) == 0)
+    if(comm_receive_data(from, &packet) == 0)
     {
         file_write_bytes(file, packet.payload, packet.length);
 
         for(i = 1; i < packet.total_size; i++)
         {
-            __receive_data(from, &packet);
+            comm_receive_data(from, &packet);
             file_write_bytes(file, packet.payload, packet.length);
         }
 

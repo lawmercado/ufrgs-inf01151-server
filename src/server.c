@@ -32,6 +32,16 @@ void *__pinger()
 	}
 }
 
+int __server_setup_as_primary()
+{
+    if(pthread_create(&pinger_thread, NULL, __pinger, NULL) != 0)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
 int main(int argc, char *argv[])
 {
     if(argc != 3)
@@ -50,7 +60,10 @@ int main(int argc, char *argv[])
 
     if(repl_is_primary(__id))
     {
-        pthread_create(&pinger_thread, NULL, __pinger, NULL);
+        if(__server_setup_as_primary() == 0)
+        {
+            log_info("server", "Set up as primary!");
+        }
     }
 
 	server_setup(port);
@@ -526,6 +539,65 @@ void __backup_server_command_handling()
         else if(strcmp(operation, "ping") == 0)
         {
             log_info("server", "Received primary server ping");
+        }
+        else if(strcmp(operation, "election") == 0)
+        {
+            log_info("server", "Received election message");
+            repl_set_is_primary_down();
+            repl_set_is_ongoing_election();
+
+            int to = atoi(username);
+
+            repl_send_answer(to);
+        }
+        else if(strcmp(operation, "answer") == 0)
+        {
+            log_info("server", "Received answer message");
+
+            repl_set_answered();
+        }
+        else if(strcmp(operation, "coordinator") == 0)
+        {
+            int elected = atoi(username);
+
+            log_info("server", "Received coordinator message! Elected %d", elected);
+
+            repl_set_new_primary(elected);
+
+            repl_set_not_answered(); // Further elections
+            repl_set_is_not_ongoing_election();
+        }
+    }
+    else
+    {
+        if(!repl_is_ongoing_election())
+        {
+            log_info("server", "I identified a primary server timeout");
+            repl_set_is_primary_down();
+            repl_start_election(__id);
+        }
+        else if(!repl_is_answered() && repl_is_ongoing_election())
+        {
+            log_info("server", "I did not receive any command.");
+            log_info("server", "I WON THE ELECTIONS");
+
+            if(repl_send_coordinator(__id) == 0)
+            {
+                repl_set_new_primary(__id);
+
+                repl_set_is_not_ongoing_election();
+
+                if(__server_setup_as_primary() == 0)
+                {
+                    log_info("server", "Set up as primary!");
+
+                    // LEVANTAR CLIENTES
+                }
+            }
+        }
+        else
+        {
+            log_error("server", "I did not receive any coordinator!");
         }
     }
 }

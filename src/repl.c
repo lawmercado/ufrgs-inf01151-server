@@ -8,6 +8,8 @@
 #include "utils.h"
 
 struct repl_server servers[REPL_MAX_SERVER];
+int __ongoing_election = 0;
+int __answered = 0;
 
 pthread_mutex_t __repl_handling_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -19,6 +21,7 @@ int repl_init()
     {
         servers[i].id = -1;
         servers[i].primary = -1;
+        servers[i].down = 0;
     }
 
     return 0;
@@ -49,6 +52,7 @@ int repl_load_servers()
 
         servers[idx].id = id;
         servers[idx].primary = type == 1;
+        servers[idx].down = 0;
         servers[idx].entity.idx_buffer = -1;
         servers[idx].entity.socket_instance = utils_create_socket();
         utils_init_sockaddr_to_host(&(servers[idx].entity.sockaddr), port, host);
@@ -76,6 +80,29 @@ int repl_is_primary(int id)
     return 0;
 }
 
+int repl_set_is_primary_down()
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+
+    int i = 0;
+
+    for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
+    {
+        if(servers[i].primary)
+        {
+            servers[i].down = 1;
+            
+            pthread_mutex_unlock(&__repl_handling_mutex);
+
+            return 0;
+        }
+    }
+
+    pthread_mutex_unlock(&__repl_handling_mutex);
+
+    return -1;
+}
+
 int repl_send_ping()
 {
     pthread_mutex_lock(&__repl_handling_mutex);
@@ -84,7 +111,7 @@ int repl_send_ping()
 
     for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
     {
-        if(servers[i].primary)
+        if(servers[i].primary || servers[i].down)
         {
             continue;
         }
@@ -244,5 +271,190 @@ int repl_send_delete(char *username, char *file)
     }
 
     pthread_mutex_unlock(&__repl_handling_mutex);
+    return 0;
+}
+
+int repl_start_election(int id)
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+
+    if(__ongoing_election)
+    {
+        log_info("repl", "Ongoing election!");
+
+        pthread_mutex_unlock(&__repl_handling_mutex);
+
+        return -1;
+    }
+    else
+    {
+        __ongoing_election = 1;
+    }
+
+    int i;
+
+    char command[COMM_PPAYLOAD_LENGTH] = "";
+
+    sprintf(command, "election %d", id);
+
+    for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
+    {
+        if(servers[i].primary || servers[i].id <= id)
+        {
+            continue;
+        }
+
+        log_info("repl", "Sending election to the servers", servers[i].id);
+
+        if(comm_send_command(&(servers[i].entity), command) == 0)
+        {
+            log_info("repl", "Election started");
+        }
+    }
+
+    pthread_mutex_unlock(&__repl_handling_mutex);
+    return 0;
+}
+
+int repl_set_is_ongoing_election()
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+
+    __ongoing_election = 1;
+    
+    pthread_mutex_unlock(&__repl_handling_mutex);
+
+    return 0;
+}
+
+int repl_set_is_not_ongoing_election()
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+
+    __ongoing_election = 0;
+    
+    pthread_mutex_unlock(&__repl_handling_mutex);
+
+    return 0;
+}
+
+int repl_send_answer(int to)
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+    int i;
+
+    char command[COMM_PPAYLOAD_LENGTH] = "";
+
+    sprintf(command, "answer");
+
+    for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
+    {
+        if(servers[i].id == to)
+        {
+            log_info("repl", "Sending answer to server %d", servers[i].id);
+
+            if(comm_send_command(&(servers[i].entity), command) == 0)
+            {
+                log_info("repl", "Answer sent");
+            }   
+        }
+    }
+
+    pthread_mutex_unlock(&__repl_handling_mutex);
+    return 0;
+}
+
+int repl_set_answered()
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+
+    __answered = 1;
+
+    pthread_mutex_unlock(&__repl_handling_mutex);
+
+    return 0;
+}
+
+int repl_is_answered()
+{
+    return __answered;
+}
+
+int repl_set_not_answered()
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+
+    __answered = 0;
+
+    pthread_mutex_unlock(&__repl_handling_mutex);
+
+    return 0;
+}
+
+int repl_send_coordinator(int elected)
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+    int i;
+
+    char command[COMM_PPAYLOAD_LENGTH] = "";
+
+    sprintf(command, "coordinator %d", elected);
+
+    for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
+    {
+        if(servers[i].primary || servers[i].down || servers[i].id == elected)
+        {
+            continue;
+        }
+
+        log_info("repl", "Sending new coordinator to the servers", servers[i].id);
+
+        if(comm_send_command(&(servers[i].entity), command) == 0)
+        {
+            log_info("repl", "Coordiantor sent");
+        }
+    }
+
+    pthread_mutex_unlock(&__repl_handling_mutex);
+    return 0;
+}
+
+int repl_set_new_primary(int elected)
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+    int i;
+    
+    for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
+    {
+        if(servers[i].primary)
+        {
+            servers[i].primary = 0;
+        }
+        else if(servers[i].id == elected)
+        {
+            servers[i].primary = 1;
+        }
+    }
+
+    pthread_mutex_unlock(&__repl_handling_mutex);
+
+    return 0;
+}
+
+int repl_is_ongoing_election()
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+
+    if(__ongoing_election)
+    {
+        log_info("repl", "Ongoing election!");
+
+        pthread_mutex_unlock(&__repl_handling_mutex);
+
+        return 1;
+    }
+
+    pthread_mutex_unlock(&__repl_handling_mutex);
+
     return 0;
 }

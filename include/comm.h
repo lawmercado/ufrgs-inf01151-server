@@ -45,6 +45,16 @@ struct comm_client {
     struct comm_entity receiver_entity;
 };
 
+int comm_response_download(struct comm_client *client, char *file);
+
+int comm_response_upload(struct comm_client *client, char *file);
+
+int comm_response_delete(struct comm_client *client, char *file);
+
+int comm_response_list_server(struct comm_client *client);
+
+int comm_response_get_sync_dir(struct comm_client *client);
+
 int comm_send_data(struct comm_entity *from, struct comm_packet *packet);
 
 int comm_receive_data(struct comm_entity *from, struct comm_packet *packet);

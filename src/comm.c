@@ -15,7 +15,44 @@
 #include "sync.h"
 #include "utils.h"
 
-struct comm_entity __server_entity;
+pthread_mutex_t __command_handling_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+int comm_upload(struct comm_entity *to, char *username, char file[FILE_NAME_LENGTH])
+{
+    char upload_command[COMM_PPAYLOAD_LENGTH];
+    char path[COMM_PARAMETER_LENGTH];
+    sync_get_user_file_path("sync_dir", username, file, path, COMM_PARAMETER_LENGTH);
+
+    sprintf(upload_command, "upload %s %s", username, file);
+
+    if(comm_send_command(to, upload_command) == 0)
+    {
+        if(comm_send_file(to, path) == 0)
+        {
+            log_info("comm", "'%s' uploaded into '%s'", file, path);
+
+            return 0;
+        }
+    }
+
+    return -1;
+}
+
+int comm_delete(struct comm_entity *to, char *username, char file[FILE_NAME_LENGTH])
+{
+    char delete_command[COMM_PPAYLOAD_LENGTH];
+
+    sprintf(delete_command, "delete %s %s", username, file);
+
+    if(comm_send_command(to, delete_command) == 0)
+    {
+        log_info("comm", "'%s' will be deleted", file);
+
+        return 0;
+    }
+
+    return -1;
+}
 
 int comm_response_download(struct comm_client *client, char *file)
 {
@@ -273,13 +310,6 @@ int comm_response_get_sync_dir(struct comm_client *client)
     __command_response_get_sync_dir_download_all(client, path_write);
 
     closedir(dr);
-
-    return 0;
-}
-
-int comm_init(struct comm_entity entity)
-{
-    __server_entity = entity;
 
     return 0;
 }
@@ -556,7 +586,7 @@ int comm_receive_command(struct comm_entity *from, char buffer[COMM_PPAYLOAD_LEN
 
     if(__reliable_receive_packet(from) != 0)
     {
-        log_error("comm", "Socket: %d, No command could be received.", from->socket_instance);
+        log_debug("comm", "Socket: %d, No command could be received.", from->socket_instance);
 
         return -1;
     }

@@ -30,8 +30,12 @@ int file_exists(char path[FILE_PATH_LENGTH]);
 
 int file_create_dir(char path[FILE_PATH_LENGTH]);
 
+int file_clear_dir(char *path);
+
 int file_read_bytes(FILE *file, char *buffer, int length);
 
 int file_write_bytes(FILE *file, char *buffer, int length);
+
+int file_path(char* dir, char* file, char *dest, int length);
 
 #endif

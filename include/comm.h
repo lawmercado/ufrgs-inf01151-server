@@ -11,7 +11,7 @@
 #define COMM_MAX_CLIENT 128
 #define COMM_RECEIVE_BUFFER_LENGTH 10
 
-#define COMM_TIMEOUT 20000
+#define COMM_TIMEOUT 5000
 #define COMM_MAX_TIMEOUTS 5
 #define COMM_ERROR_TIMEOUT -2
 
@@ -19,6 +19,7 @@
 #define COMM_PTYPE_DATA 0
 #define COMM_PTYPE_CMD 1
 #define COMM_PTYPE_ACK 2
+#define COMM_PTYPE_PING 3
 
 struct comm_packet {
     uint16_t type; // Packet type (COMM_PTYPE_*)
@@ -41,9 +42,18 @@ struct comm_client {
     int port;
     int receiver_port;
     int valid;
+    int backup;
     struct comm_entity entity;
     struct comm_entity receiver_entity;
 };
+
+int comm_upload(struct comm_entity *to, char *username, char file[FILE_NAME_LENGTH]);
+
+int comm_delete(struct comm_entity *to, char *username, char file[FILE_NAME_LENGTH]);
+
+int comm_download(struct comm_entity *to, char *username, char file[FILE_NAME_LENGTH]);
+
+int comm_get_sync_dir(struct comm_entity *to, char *username);
 
 int comm_response_download(struct comm_client *client, char *file);
 
@@ -66,7 +76,5 @@ int comm_receive_command(struct comm_entity *from, char buffer[COMM_PPAYLOAD_LEN
 int comm_send_file(struct comm_entity *to, char path[FILE_PATH_LENGTH]);
 
 int comm_receive_file(struct comm_entity *from, char path[FILE_PATH_LENGTH]);
-
-int comm_init(struct comm_entity entity);
 
 #endif

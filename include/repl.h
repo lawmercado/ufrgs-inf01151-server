@@ -9,20 +9,27 @@ struct repl_server {
     int id;
     int primary;
     struct comm_entity entity;
+    struct comm_entity replication_entity;
 };
 
 int repl_init();
 
-int repl_load_servers(struct repl_server servers[REPL_MAX_SERVER]);
+int repl_load_servers();
 
-int repl_send_clients(struct repl_server servers[REPL_MAX_SERVER], struct comm_client clients[COMM_MAX_CLIENT]);
+int repl_is_primary(int id);
 
-int repl_receive_clients(struct comm_client clients[COMM_MAX_CLIENT]);
+int repl_get_primary_server_entity(struct comm_entity *entity);
 
-int repl_receive_file(struct comm_client client, char file[FILE_NAME_LENGTH]);
+int repl_send_ping();
 
-int repl_send_ping(struct repl_server servers[REPL_MAX_SERVER]);
+int repl_send_login(char *username, int port);
 
-int repl_receive_ping();
+int repl_send_logout(char *username, int port);
+
+int repl_synchornize_dir(char *username);
+
+int repl_send_upload(char *username, char *file);
+
+int repl_send_delete(char *username, char *file);
 
 #endif

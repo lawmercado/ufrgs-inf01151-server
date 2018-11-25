@@ -13,4 +13,6 @@ int utils_create_binded_socket(struct sockaddr_in *sockaddr);
 
 int utils_get_port(struct sockaddr *sockaddr);
 
+int utils_get_ip(struct sockaddr_in *sockaddr, char ip[INET_ADDRSTRLEN]);
+
 #endif

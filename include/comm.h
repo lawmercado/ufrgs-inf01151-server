@@ -43,6 +43,7 @@ struct comm_client {
     int receiver_port;
     int valid;
     int backup;
+    char address[INET_ADDRSTRLEN];
     struct comm_entity entity;
     struct comm_entity receiver_entity;
 };

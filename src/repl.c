@@ -8,8 +8,8 @@
 #include "utils.h"
 
 struct repl_server servers[REPL_MAX_SERVER];
-int __ongoing_election = 0;
-int __answered = 0;
+int __election_ongoing = 0;
+int __election_answered = 0;
 
 pthread_mutex_t __repl_handling_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -80,7 +80,7 @@ int repl_is_primary(int id)
     return 0;
 }
 
-int repl_set_is_primary_down()
+int repl_backup_set_is_primary_down()
 {
     pthread_mutex_lock(&__repl_handling_mutex);
 
@@ -97,13 +97,34 @@ int repl_set_is_primary_down()
             return 0;
         }
     }
-
     pthread_mutex_unlock(&__repl_handling_mutex);
 
     return -1;
 }
 
-int repl_send_ping()
+int repl_get_primary_address(char ip[INET_ADDRSTRLEN])
+{
+    pthread_mutex_lock(&__repl_handling_mutex);
+
+    int i = 0;
+
+    for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
+    {
+        if(servers[i].primary)
+        {
+            utils_get_ip(&(servers[i].entity.sockaddr), ip);
+            
+            pthread_mutex_unlock(&__repl_handling_mutex);
+
+            return 0;
+        }
+    }
+    pthread_mutex_unlock(&__repl_handling_mutex);
+
+    return -1;
+}
+
+int repl_primary_send_ping()
 {
     pthread_mutex_lock(&__repl_handling_mutex);
     int i;
@@ -135,18 +156,18 @@ int repl_send_ping()
     return 0;
 }
 
-int repl_send_login(char *username, int port)
+int repl_primary_send_login(char *username, char *address, int port)
 {
     pthread_mutex_lock(&__repl_handling_mutex);
     int i;
 
     char command[COMM_PPAYLOAD_LENGTH];
 
-    sprintf(command, "login %s %d", username, port);
+    sprintf(command, "login %s %s %d", username, address, port);
 
     for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
     {
-        if(servers[i].primary)
+        if(servers[i].primary || servers[i].down)
         {
             continue;
         }
@@ -163,7 +184,7 @@ int repl_send_login(char *username, int port)
     return 0;
 }
 
-int repl_send_logout(char *username, int port)
+int repl_primary_send_logout(char *username, int port)
 {
     pthread_mutex_lock(&__repl_handling_mutex);
     int i;
@@ -174,7 +195,7 @@ int repl_send_logout(char *username, int port)
 
     for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
     {
-        if(servers[i].primary)
+        if(servers[i].primary || servers[i].down)
         {
             continue;
         }
@@ -191,7 +212,7 @@ int repl_send_logout(char *username, int port)
     return 0;
 }
 
-int repl_synchornize_dir(char *username)
+int repl_primary_send_sync_dir(char *username)
 {
     DIR *watched_dir;
     struct dirent *entry;
@@ -210,7 +231,7 @@ int repl_synchornize_dir(char *username)
                 continue;
             }
 
-            if(repl_send_upload(username, entry->d_name) != 0)
+            if(repl_primary_send_upload(username, entry->d_name) != 0)
             {
                 log_error("repl", "Error while synchronizing dir");
             }
@@ -226,14 +247,14 @@ int repl_synchornize_dir(char *username)
     return 0;
 }
 
-int repl_send_upload(char *username, char *file)
+int repl_primary_send_upload(char *username, char *file)
 {
     pthread_mutex_lock(&__repl_handling_mutex);
     int i;
 
     for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
     {
-        if(servers[i].primary)
+        if(servers[i].primary || servers[i].down)
         {
             continue;
         }
@@ -250,14 +271,14 @@ int repl_send_upload(char *username, char *file)
     return 0;
 }
 
-int repl_send_delete(char *username, char *file)
+int repl_primary_send_delete(char *username, char *file)
 {
     pthread_mutex_lock(&__repl_handling_mutex);
     int i;
 
     for(i = 0; i < REPL_MAX_SERVER && servers[i].id != -1; i++)
     {
-        if(servers[i].primary)
+        if(servers[i].primary || servers[i].down)
         {
             continue;
         }
@@ -274,11 +295,11 @@ int repl_send_delete(char *username, char *file)
     return 0;
 }
 
-int repl_start_election(int id)
+int repl_backup_start_election(int id)
 {
     pthread_mutex_lock(&__repl_handling_mutex);
 
-    if(__ongoing_election)
+    if(__election_ongoing)
     {
         log_info("repl", "Ongoing election!");
 
@@ -288,7 +309,7 @@ int repl_start_election(int id)
     }
     else
     {
-        __ongoing_election = 1;
+        __election_ongoing = 1;
     }
 
     int i;
@@ -316,29 +337,29 @@ int repl_start_election(int id)
     return 0;
 }
 
-int repl_set_is_ongoing_election()
+int repl_set_is_election_ongoing()
 {
     pthread_mutex_lock(&__repl_handling_mutex);
 
-    __ongoing_election = 1;
+    __election_ongoing = 1;
     
     pthread_mutex_unlock(&__repl_handling_mutex);
 
     return 0;
 }
 
-int repl_set_is_not_ongoing_election()
+int repl_set_is_not_election_ongoing()
 {
     pthread_mutex_lock(&__repl_handling_mutex);
 
-    __ongoing_election = 0;
+    __election_ongoing = 0;
     
     pthread_mutex_unlock(&__repl_handling_mutex);
 
     return 0;
 }
 
-int repl_send_answer(int to)
+int repl_backup_send_election_answer(int to)
 {
     pthread_mutex_lock(&__repl_handling_mutex);
     int i;
@@ -364,34 +385,34 @@ int repl_send_answer(int to)
     return 0;
 }
 
-int repl_set_answered()
+int repl_set_election_answered()
 {
     pthread_mutex_lock(&__repl_handling_mutex);
 
-    __answered = 1;
+    __election_answered = 1;
 
     pthread_mutex_unlock(&__repl_handling_mutex);
 
     return 0;
 }
 
-int repl_is_answered()
+int repl_is_election_answered()
 {
-    return __answered;
+    return __election_answered;
 }
 
-int repl_set_not_answered()
+int repl_set_election_not_answered()
 {
     pthread_mutex_lock(&__repl_handling_mutex);
 
-    __answered = 0;
+    __election_answered = 0;
 
     pthread_mutex_unlock(&__repl_handling_mutex);
 
     return 0;
 }
 
-int repl_send_coordinator(int elected)
+int repl_backup_send_coordinator(int elected)
 {
     pthread_mutex_lock(&__repl_handling_mutex);
     int i;
@@ -419,7 +440,7 @@ int repl_send_coordinator(int elected)
     return 0;
 }
 
-int repl_set_new_primary(int elected)
+int repl_backup_set_new_primary(int elected)
 {
     pthread_mutex_lock(&__repl_handling_mutex);
     int i;
@@ -441,11 +462,11 @@ int repl_set_new_primary(int elected)
     return 0;
 }
 
-int repl_is_ongoing_election()
+int repl_is_election_ongoing()
 {
     pthread_mutex_lock(&__repl_handling_mutex);
 
-    if(__ongoing_election)
+    if(__election_ongoing)
     {
         log_info("repl", "Ongoing election!");
 

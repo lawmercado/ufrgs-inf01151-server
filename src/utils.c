@@ -80,3 +80,10 @@ int utils_get_port(struct sockaddr *sockaddr)
 
     return ntohs((((struct sockaddr_in6*)sockaddr)->sin6_port));
 }
+
+int utils_get_ip(struct sockaddr_in *sockaddr, char ip[INET_ADDRSTRLEN])
+{
+    inet_ntop(AF_INET, &(sockaddr->sin_addr), ip, INET_ADDRSTRLEN);
+
+    return 0;
+}

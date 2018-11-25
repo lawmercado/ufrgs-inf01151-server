@@ -17,24 +17,24 @@ pthread_mutex_t __client_handling_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int __id = -1;
 
-pthread_t pinger_thread;
+pthread_t __pinger_thread;
 
-int __client_create(struct sockaddr_in client_sockaddr, char username[COMM_MAX_CLIENT], int port, int receive_port);
+int __client_create(char address[INET_ADDRSTRLEN], char username[COMM_MAX_CLIENT], int port, int receive_port);
 void __client_remove(int port);
 
 void *__pinger()
 {
 	while(1)
 	{
-		repl_send_ping();
+		repl_primary_send_ping();
 
 		sleep(2);
 	}
 }
 
-int __server_setup_as_primary()
+int __server_setup_pinger()
 {
-    if(pthread_create(&pinger_thread, NULL, __pinger, NULL) != 0)
+    if(pthread_create(&__pinger_thread, NULL, __pinger, NULL) != 0)
     {
         return -1;
     }
@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
 
     if(repl_is_primary(__id))
     {
-        if(__server_setup_as_primary() == 0)
+        if(__server_setup_pinger() == 0)
         {
             log_info("server", "Set up as primary!");
         }
@@ -189,7 +189,7 @@ int __server_propagate_deletion_to_related_clients(struct comm_client *client, c
 
 int __client_handle_command(struct comm_client *client, char *command)
 {
-    char operation[COMM_COMMAND_LENGTH], parameter[COMM_PARAMETER_LENGTH];
+    char operation[COMM_COMMAND_LENGTH] = "", parameter[COMM_PARAMETER_LENGTH] = "";
 
     sscanf(command, "%s %[^\n\t]s", operation, parameter);
 
@@ -205,7 +205,7 @@ int __client_handle_command(struct comm_client *client, char *command)
 		{
             if(repl_is_primary(__id))
             {
-                repl_send_upload(client->username, parameter);
+                repl_primary_send_upload(client->username, parameter);
             }
 
 			return __server_propagate_synchronization_to_related_clients(client, parameter, 1);
@@ -217,7 +217,7 @@ int __client_handle_command(struct comm_client *client, char *command)
 		{
             if(repl_is_primary(__id))
             {
-                repl_send_delete(client->username, parameter);
+                repl_primary_send_delete(client->username, parameter);
             }
 
 			return __server_propagate_deletion_to_related_clients(client, parameter, 0);
@@ -237,7 +237,7 @@ int __client_handle_command(struct comm_client *client, char *command)
 
         if(repl_is_primary(__id))
         {
-            repl_send_logout(client->username, client->receiver_port);
+            repl_primary_send_logout(client->username, client->receiver_port);
         }
 
     	__client_remove(client->port);
@@ -265,64 +265,107 @@ void *__client_handler(void *arg)
 {
     int client_slot = *((int *) arg);
 
+    fprintf(stderr, "CLI ID %d\n", client_slot);
+
     do
     {
         char command[COMM_PPAYLOAD_LENGTH];
         bzero(command, COMM_PPAYLOAD_LENGTH);
 
+        fprintf(stderr, "SAA %d\n", utils_get_port((struct sockaddr *)&(__clients[client_slot].entity)));
+
         if(comm_receive_command(&(__clients[client_slot].entity), command) == 0)
         {
+            fprintf(stderr, "AASASAS %d\n", utils_get_port((struct sockaddr *)&(__clients[client_slot].entity)));
+
             __client_handle_command(&__clients[client_slot], command);
         }
+
+        fprintf(stderr, "NAAASASAS %d\n", utils_get_port((struct sockaddr *)&(__clients[client_slot].entity)));
 
     } while(__clients[client_slot].valid == 1);
 
     pthread_exit(0);
 }
 
-int __client_create(struct sockaddr_in client_sockaddr, char username[COMM_MAX_CLIENT], int port, int receive_port)
+int __client_alocate_sender(int id, struct comm_client *client)
+{
+    struct sockaddr_in sockaddr;
+
+    utils_init_sockaddr_to_host(&sockaddr, client->port, client->address);
+
+    log_info("server", "Alocating the client %s %d %s", client->username, client->port, client->address);
+
+    client->entity.socket_instance = utils_create_binded_socket(&sockaddr);
+    if(client->entity.socket_instance == -1)
+    {
+        log_error("server","Could not create socket instance");
+
+        return -1;
+    }
+
+    client->entity.sockaddr = sockaddr;
+    client->entity.idx_buffer = -1;
+
+    return 0;
+}
+
+int __client_alocate_receiver(int id, struct comm_client *client)
+{
+    struct sockaddr_in sockaddr;
+
+    utils_init_sockaddr_to_host(&sockaddr, client->receiver_port, client->address);
+
+    client->receiver_entity.socket_instance = utils_create_socket();
+    if(client->receiver_entity.socket_instance == -1)
+    {
+        log_error("server","Could not create receiver socket instance");
+
+        return -1;
+    }
+    
+    client->receiver_entity.sockaddr = sockaddr;
+    utils_init_sockaddr(&(client->receiver_entity.sockaddr), client->receiver_port, sockaddr.sin_addr.s_addr);
+    client->receiver_entity.idx_buffer = -1;
+
+    return 0;
+}
+
+int __client_alocate(int id, struct comm_client *client)
+{
+    if(__client_alocate_sender(id, client) != 0)
+    {
+        return -1;
+    }
+
+    if(__client_alocate_receiver(id, client) != 0)
+    {
+        return -1;
+    }
+
+    return 0;
+}
+
+int __client_create(char address[INET_ADDRSTRLEN], char username[COMM_MAX_CLIENT], int port, int receive_port)
 {
     pthread_mutex_lock(&__client_handling_mutex);
 
     int client_slot = __client_get_empty_list_slot();
-    struct sockaddr_in server_sockaddr;
-
-    utils_init_sockaddr(&server_sockaddr, port, INADDR_ANY);
-
+    
     if(client_slot != -1)
     {
         strncpy(__clients[client_slot].username, username, strlen(username));
         __clients[client_slot].valid = 1;
         __clients[client_slot].backup = 0;
-        
-        __clients[client_slot].entity.socket_instance = utils_create_binded_socket(&server_sockaddr);
-        if(__clients[client_slot].entity.socket_instance == -1)
-        {
-            log_error("server","Could not create socket instance");
-
-            return -1;
-        }
-
         __clients[client_slot].port = port;
-        __clients[client_slot].entity.sockaddr = client_sockaddr;
-        __clients[client_slot].entity.idx_buffer = -1;
-
-        __clients[client_slot].receiver_entity.socket_instance = utils_create_socket();
-        if(__clients[client_slot].receiver_entity.socket_instance == -1)
-        {
-            log_error("server","Could not create receiver socket instance");
-
-            return -1;
-        }
-
         __clients[client_slot].receiver_port = receive_port;
-        __clients[client_slot].receiver_entity.sockaddr = client_sockaddr;
-        utils_init_sockaddr(&(__clients[client_slot].receiver_entity.sockaddr), receive_port, client_sockaddr.sin_addr.s_addr);
-        __clients[client_slot].receiver_entity.idx_buffer = -1;
+        strcpy(__clients[client_slot].address, address);
+        
+        __client_alocate(client_slot, &(__clients[client_slot]));
+
+        pthread_create(&(__clients[client_slot].thread), NULL, __client_handler, (void *)&client_slot);
 
         pthread_mutex_unlock(&__client_handling_mutex);
-
-        pthread_create(&__clients[client_slot].thread, NULL, __client_handler, (void *)&client_slot);
 
         return client_slot;
     }
@@ -332,7 +375,7 @@ int __client_create(struct sockaddr_in client_sockaddr, char username[COMM_MAX_C
     return -1;
 }
 
-int __client_unknown_create(char username[COMM_MAX_CLIENT], int port, int receive_port)
+int __client_unknown_create(char address[INET_ADDRSTRLEN], char username[COMM_MAX_CLIENT], int port, int receive_port)
 {
     pthread_mutex_lock(&__client_handling_mutex);
 
@@ -345,6 +388,7 @@ int __client_unknown_create(char username[COMM_MAX_CLIENT], int port, int receiv
         __clients[client_slot].backup = 1;
         __clients[client_slot].port = port;
         __clients[client_slot].receiver_port = receive_port;
+        strcpy(__clients[client_slot].address, address);
 
 
         pthread_mutex_unlock(&__client_handling_mutex);
@@ -450,19 +494,77 @@ void __primary_server_command_handling()
                 }
             }
             
-            if(__client_create(__server_entity.sockaddr, username, __counter_client_port, port) < 0)
+            char address[INET_ADDRSTRLEN] = "";
+            utils_get_ip(&(__server_entity.sockaddr), address);
+            if(__client_create(address, username, __counter_client_port, port) < 0)
             {
                 log_debug("server","Could not log user");
             }
             else
             {
-                repl_send_login(username, port);
-                repl_synchornize_dir(username);
+                repl_primary_send_login(username, address, port);
+                repl_primary_send_sync_dir(username);
             }
 
             __client_print_list();
         }
     }
+}
+
+int __client_send_reconnection(struct comm_client *client)
+{
+    char command[COMM_PPAYLOAD_LENGTH] = "";
+    char ip[INET_ADDRSTRLEN] = "";
+
+    repl_get_primary_address(ip);
+
+    sprintf(command, "recon %s %d", ip, client->port);
+
+    log_info("server", "Sending recon command %s!", command);
+
+    if(comm_send_command(&(client->receiver_entity), command) == 0)
+    {
+        log_info("server", "Sent client reconection to '%s', now on port %d", client->username, client->port);
+
+        return 0;
+    }
+    else
+    {
+        return -1;			
+    }
+}
+
+/*
+FAZER O CLIENTE TROCAR O SERVIDOR PARA TESTAR ESSA MERDA
+*/
+
+void __server_alocate_receivers_backup_clients()
+{
+    pthread_mutex_lock(&__client_handling_mutex);
+
+    int i;
+
+    for(i = 0; i < COMM_MAX_CLIENT; i++)
+    {
+        if(__clients[i].backup != -1 && __clients[i].backup)
+        {
+            if(__clients[i].valid)
+            {
+                __client_alocate(i, &(__clients[i]));
+
+                __client_send_reconnection(&(__clients[i]));
+
+                int *client_idx = calloc(1, sizeof(int));
+                *client_idx = i;
+
+                pthread_create(&(__clients[i].thread), NULL, __client_handler, client_idx);
+            }
+
+            __clients[i].backup = 0;
+        }
+    }
+
+    pthread_mutex_unlock(&__client_handling_mutex);
 }
 
 void __backup_server_command_handling()
@@ -474,20 +576,22 @@ void __backup_server_command_handling()
 
     if(comm_receive_command(&(primary_entity), receive_buffer) == 0)
     {
-        char operation[COMM_COMMAND_LENGTH], username[COMM_USERNAME_LENGTH], parameter[COMM_PARAMETER_LENGTH];
+        char operation[COMM_COMMAND_LENGTH], username[COMM_USERNAME_LENGTH], parameter[COMM_PARAMETER_LENGTH], parameter2[COMM_PARAMETER_LENGTH];
 
         bzero(operation, COMM_COMMAND_LENGTH);
         bzero(username, COMM_USERNAME_LENGTH);
+        bzero(parameter, COMM_PARAMETER_LENGTH);
+        bzero(parameter2, COMM_PARAMETER_LENGTH);
 
-        sscanf(receive_buffer, "%s %s %s", operation, username, parameter);
+        sscanf(receive_buffer, "%s %s %s %s", operation, username, parameter, parameter2);
 
         if(strcmp(operation, "login") == 0)
         {
-            int port = atoi(parameter);
+            int port = atoi(parameter2);
 
             __counter_client_port++;
 
-            if(__client_unknown_create(username, __counter_client_port, port) < 0)
+            if(__client_unknown_create(parameter, username, __counter_client_port, port) < 0)
             {
                 log_debug("server","Could not create client");
             }
@@ -543,18 +647,18 @@ void __backup_server_command_handling()
         else if(strcmp(operation, "election") == 0)
         {
             log_info("server", "Received election message");
-            repl_set_is_primary_down();
-            repl_set_is_ongoing_election();
+            repl_backup_set_is_primary_down();
+            repl_set_is_election_ongoing();
 
             int to = atoi(username);
 
-            repl_send_answer(to);
+            repl_backup_send_election_answer(to);
         }
         else if(strcmp(operation, "answer") == 0)
         {
             log_info("server", "Received answer message");
 
-            repl_set_answered();
+            repl_set_election_answered();
         }
         else if(strcmp(operation, "coordinator") == 0)
         {
@@ -562,36 +666,36 @@ void __backup_server_command_handling()
 
             log_info("server", "Received coordinator message! Elected %d", elected);
 
-            repl_set_new_primary(elected);
+            repl_backup_set_new_primary(elected);
 
-            repl_set_not_answered(); // Further elections
-            repl_set_is_not_ongoing_election();
+            repl_set_election_not_answered(); // Further elections
+            repl_set_is_not_election_ongoing();
         }
     }
     else
     {
-        if(!repl_is_ongoing_election())
+        if(!repl_is_election_ongoing())
         {
             log_info("server", "I identified a primary server timeout");
-            repl_set_is_primary_down();
-            repl_start_election(__id);
+            repl_backup_set_is_primary_down();
+            repl_backup_start_election(__id);
         }
-        else if(!repl_is_answered() && repl_is_ongoing_election())
+        else if(!repl_is_election_answered() && repl_is_election_ongoing())
         {
             log_info("server", "I did not receive any command.");
             log_info("server", "I WON THE ELECTIONS");
 
-            if(repl_send_coordinator(__id) == 0)
+            if(repl_backup_send_coordinator(__id) == 0)
             {
-                repl_set_new_primary(__id);
+                repl_backup_set_new_primary(__id);
 
-                repl_set_is_not_ongoing_election();
+                repl_set_is_not_election_ongoing();
 
-                if(__server_setup_as_primary() == 0)
+                if(__server_setup_pinger() == 0)
                 {
                     log_info("server", "Set up as primary!");
 
-                    // LEVANTAR CLIENTES
+                    __server_alocate_receivers_backup_clients();
                 }
             }
         }

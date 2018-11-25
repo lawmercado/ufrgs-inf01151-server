@@ -19,38 +19,40 @@ int repl_load_servers();
 
 int repl_is_primary(int id);
 
-int repl_set_is_primary_down();
+int repl_backup_set_is_primary_down();
 
-int repl_send_ping();
+int repl_get_primary_address(char ip[INET_ADDRSTRLEN]);
 
-int repl_send_login(char *username, int port);
+int repl_primary_send_ping();
 
-int repl_send_logout(char *username, int port);
+int repl_primary_send_login(char *username, char *address, int port);
 
-int repl_synchornize_dir(char *username);
+int repl_primary_send_logout(char *username, int port);
 
-int repl_send_upload(char *username, char *file);
+int repl_primary_send_sync_dir(char *username);
 
-int repl_send_delete(char *username, char *file);
+int repl_primary_send_upload(char *username, char *file);
 
-int repl_start_election(int id);
+int repl_primary_send_delete(char *username, char *file);
 
-int repl_set_is_ongoing_election();
+int repl_backup_start_election(int id);
 
-int repl_set_is_not_ongoing_election();
+int repl_set_is_election_ongoing();
 
-int repl_send_answer(int to);
+int repl_set_is_not_election_ongoing();
 
-int repl_send_coordinator(int elected);
+int repl_backup_send_election_answer(int to);
 
-int repl_set_new_primary(int elected);
+int repl_backup_send_coordinator(int elected);
 
-int repl_set_answered();
+int repl_backup_set_new_primary(int elected);
 
-int repl_set_not_answered();
+int repl_set_election_answered();
 
-int repl_is_answered();
+int repl_set_election_not_answered();
 
-int repl_is_ongoing_election();
+int repl_is_election_answered();
+
+int repl_is_election_ongoing();
 
 #endif

@@ -3,6 +3,7 @@
 
 #include <pthread.h>
 #include <netdb.h>
+#include <limits.h>
 #include "file.h"
 
 #define COMM_COMMAND_LENGTH 64
@@ -43,7 +44,7 @@ struct comm_client {
     int receiver_port;
     int valid;
     int backup;
-    char address[INET_ADDRSTRLEN];
+    char address[HOST_NAME_MAX];
     struct comm_entity entity;
     struct comm_entity receiver_entity;
 };

@@ -20,7 +20,7 @@ int __id = -1;
 
 pthread_t __pinger_thread;
 
-int __client_create(char address[INET_ADDRSTRLEN], char username[COMM_MAX_CLIENT], int port, int receive_port);
+int __client_create(char address[HOST_NAME_MAX], char username[COMM_MAX_CLIENT], int port, int receive_port);
 void __client_remove(int port);
 
 void *__pinger()
@@ -347,7 +347,7 @@ int __client_alocate(int id, struct comm_client *client)
     return 0;
 }
 
-int __client_create(char address[INET_ADDRSTRLEN], char username[COMM_MAX_CLIENT], int port, int receive_port)
+int __client_create(char address[HOST_NAME_MAX], char username[COMM_MAX_CLIENT], int port, int receive_port)
 {
     pthread_mutex_lock(&__client_handling_mutex);
 
@@ -376,7 +376,7 @@ int __client_create(char address[INET_ADDRSTRLEN], char username[COMM_MAX_CLIENT
     return -1;
 }
 
-int __client_unknown_create(char address[INET_ADDRSTRLEN], char username[COMM_MAX_CLIENT], int port, int receive_port)
+int __client_unknown_create(char address[HOST_NAME_MAX], char username[COMM_MAX_CLIENT], int port, int receive_port)
 {
     pthread_mutex_lock(&__client_handling_mutex);
 
@@ -495,8 +495,12 @@ void __primary_server_command_handling()
                 }
             }
             
-            char address[INET_ADDRSTRLEN] = "";
-            utils_get_ip(&(__server_entity.sockaddr), address);
+            char address[129] = "";
+
+            getnameinfo((struct sockaddr *)&(__server_entity.sockaddr), sizeof(__server_entity.sockaddr), address, 128, NULL, 0, 0);
+            
+            log_info("server", "Client addr. '%s'\n", address);
+
             if(__client_create(address, username, __counter_client_port, port) < 0)
             {
                 log_debug("server","Could not log user");

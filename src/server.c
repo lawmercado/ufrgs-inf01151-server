@@ -2,7 +2,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <limits.h>
 #include "comm.h"
 #include "log.h"
 #include "utils.h"
@@ -20,7 +19,7 @@ int __id = -1;
 
 pthread_t __pinger_thread;
 
-int __client_create(char address[HOST_NAME_MAX], char username[COMM_MAX_CLIENT], int port, int receive_port);
+int __client_create(char address[COMM_HOST_LENGTH], char username[COMM_MAX_CLIENT], int port, int receive_port);
 void __client_remove(int port);
 
 void *__pinger()
@@ -128,7 +127,7 @@ int __server_propagate_synchronization_to_related_clients(struct comm_client *cl
             {
                 if(comm_send_file(&(__clients[i].receiver_entity), path) == 0)
                 {
-                    log_info("server","Client propagated synchronization");
+                    log_info("server", "Client propagated synchronization");
 				}
                 else
 				{
@@ -194,7 +193,7 @@ int __client_handle_command(struct comm_client *client, char *command)
 
     sscanf(command, "%s %[^\n\t]s", operation, parameter);
 
-    log_debug("server","Command read '%s %s'", operation, parameter);
+    log_debug("server", "Command read '%s %s'", operation, parameter);
 
     if(strcmp(operation, "download") == 0)
     {
@@ -266,23 +265,15 @@ void *__client_handler(void *arg)
 {
     int client_slot = *((int *) arg);
 
-    fprintf(stderr, "CLI ID %d\n", client_slot);
-
     do
     {
         char command[COMM_PPAYLOAD_LENGTH];
         bzero(command, COMM_PPAYLOAD_LENGTH);
 
-        fprintf(stderr, "SAA %d\n", utils_get_port((struct sockaddr *)&(__clients[client_slot].entity)));
-
         if(comm_receive_command(&(__clients[client_slot].entity), command) == 0)
         {
-            fprintf(stderr, "AASASAS %d\n", utils_get_port((struct sockaddr *)&(__clients[client_slot].entity)));
-
             __client_handle_command(&__clients[client_slot], command);
         }
-
-        fprintf(stderr, "NAAASASAS %d\n", utils_get_port((struct sockaddr *)&(__clients[client_slot].entity)));
 
     } while(__clients[client_slot].valid == 1);
 
@@ -291,21 +282,18 @@ void *__client_handler(void *arg)
 
 int __client_alocate_sender(int id, struct comm_client *client)
 {
-    struct sockaddr_in sockaddr;
-
-    utils_init_sockaddr_to_host(&sockaddr, client->port, client->address);
+    utils_init_sockaddr(&(client->entity.sockaddr), client->port, INADDR_ANY);
 
     log_info("server", "Alocating the client %s %d %s", client->username, client->port, client->address);
 
-    client->entity.socket_instance = utils_create_binded_socket(&sockaddr);
+    client->entity.socket_instance = utils_create_binded_socket(&(client->entity.sockaddr));
     if(client->entity.socket_instance == -1)
     {
-        log_error("server","Could not create socket instance");
+        log_error("server", "Could not create socket instance");
 
         return -1;
     }
 
-    client->entity.sockaddr = sockaddr;
     client->entity.idx_buffer = -1;
 
     return 0;
@@ -313,20 +301,16 @@ int __client_alocate_sender(int id, struct comm_client *client)
 
 int __client_alocate_receiver(int id, struct comm_client *client)
 {
-    struct sockaddr_in sockaddr;
-
-    utils_init_sockaddr_to_host(&sockaddr, client->receiver_port, client->address);
+    utils_init_sockaddr_to_host(&(client->receiver_entity.sockaddr), client->receiver_port, client->address);
 
     client->receiver_entity.socket_instance = utils_create_socket();
     if(client->receiver_entity.socket_instance == -1)
     {
-        log_error("server","Could not create receiver socket instance");
+        log_error("server", "Could not create receiver socket instance");
 
         return -1;
     }
     
-    client->receiver_entity.sockaddr = sockaddr;
-    utils_init_sockaddr(&(client->receiver_entity.sockaddr), client->receiver_port, sockaddr.sin_addr.s_addr);
     client->receiver_entity.idx_buffer = -1;
 
     return 0;
@@ -347,7 +331,7 @@ int __client_alocate(int id, struct comm_client *client)
     return 0;
 }
 
-int __client_create(char address[HOST_NAME_MAX], char username[COMM_MAX_CLIENT], int port, int receive_port)
+int __client_create(char address[COMM_HOST_LENGTH], char username[COMM_MAX_CLIENT], int port, int receive_port)
 {
     pthread_mutex_lock(&__client_handling_mutex);
 
@@ -362,7 +346,14 @@ int __client_create(char address[HOST_NAME_MAX], char username[COMM_MAX_CLIENT],
         __clients[client_slot].receiver_port = receive_port;
         strcpy(__clients[client_slot].address, address);
         
-        __client_alocate(client_slot, &(__clients[client_slot]));
+        if(__client_alocate(client_slot, &(__clients[client_slot])) != 0)
+        {
+            __clients[client_slot].valid = 0;
+
+            pthread_mutex_unlock(&__client_handling_mutex);    
+
+            return -1;
+        }
 
         pthread_create(&(__clients[client_slot].thread), NULL, __client_handler, (void *)&client_slot);
 
@@ -376,7 +367,7 @@ int __client_create(char address[HOST_NAME_MAX], char username[COMM_MAX_CLIENT],
     return -1;
 }
 
-int __client_unknown_create(char address[HOST_NAME_MAX], char username[COMM_MAX_CLIENT], int port, int receive_port)
+int __client_unknown_create(char address[COMM_HOST_LENGTH], char username[COMM_MAX_CLIENT], int port, int receive_port)
 {
     pthread_mutex_lock(&__client_handling_mutex);
 
@@ -441,11 +432,11 @@ void __client_print_list()
     {
         if(__clients[i].valid == 1 && __clients[i].backup == 0)
         {
-            log_info("server","Client '%s', on port %d with socket %d", __clients[i].username, __clients[i].port, __clients[i].entity.socket_instance);
+            log_info("server", "Client '%s', on port %d with socket %d", __clients[i].username, __clients[i].port, __clients[i].entity.socket_instance);
         }
         else if(__clients[i].backup == 1)
         {
-            log_info("server","Backup client '%s', on port %d", __clients[i].username, __clients[i].port);
+            log_info("server", "Backup client '%s', on port %d", __clients[i].username, __clients[i].port);
         }
     }
 }
@@ -485,25 +476,20 @@ void __primary_server_command_handling()
         {
             __counter_client_port++;
 
-            if(repl_is_primary(__id))
-            {
-                sprintf(packet.payload, "%d", __counter_client_port);
+            sprintf(packet.payload, "%d", __counter_client_port);
 
-                if(comm_send_data(&(__server_entity), &packet) != 0)
-                {
-                    __counter_client_port--;
-                }
+            if(comm_send_data(&(__server_entity), &packet) != 0)
+            {
+                __counter_client_port--;
             }
             
-            char address[129] = "";
+            char address[COMM_HOST_LENGTH] = "";
 
-            getnameinfo((struct sockaddr *)&(__server_entity.sockaddr), sizeof(__server_entity.sockaddr), address, 128, NULL, 0, 0);
+            getnameinfo((struct sockaddr *)&(__server_entity.sockaddr), sizeof(__server_entity.sockaddr), address, COMM_HOST_LENGTH, NULL, 0, 0);
             
-            log_info("server", "Client addr. '%s'\n", address);
-
             if(__client_create(address, username, __counter_client_port, port) < 0)
             {
-                log_debug("server","Could not log user");
+                log_debug("server", "Could not log user");
             }
             else
             {
@@ -519,7 +505,7 @@ void __primary_server_command_handling()
 int __client_send_reconnection(struct comm_client *client)
 {
     char command[COMM_PPAYLOAD_LENGTH] = "";
-    char host[HOST_NAME_MAX] = "";
+    char host[COMM_HOST_LENGTH] = "";
 
     repl_get_primary_address(host);
 
@@ -539,10 +525,6 @@ int __client_send_reconnection(struct comm_client *client)
     }
 }
 
-/*
-FAZER O CLIENTE TROCAR O SERVIDOR PARA TESTAR ESSA MERDA
-*/
-
 void __server_alocate_receivers_backup_clients()
 {
     pthread_mutex_lock(&__client_handling_mutex);
@@ -555,17 +537,22 @@ void __server_alocate_receivers_backup_clients()
         {
             if(__clients[i].valid)
             {
-                __client_alocate(i, &(__clients[i]));
+                if(__client_alocate(i, &(__clients[i])) == 0)
+                {
+                    __client_send_reconnection(&(__clients[i]));
 
-                __client_send_reconnection(&(__clients[i]));
+                    int *client_idx = calloc(1, sizeof(int));
+                    *client_idx = i;
 
-                int *client_idx = calloc(1, sizeof(int));
-                *client_idx = i;
+                    pthread_create(&(__clients[i].thread), NULL, __client_handler, client_idx);
 
-                pthread_create(&(__clients[i].thread), NULL, __client_handler, client_idx);
+                    __clients[i].backup = 0;
+                }
+                else
+                {
+                    log_error("server", "Could not setup backup client!");
+                }
             }
-
-            __clients[i].backup = 0;
         }
     }
 
@@ -598,7 +585,7 @@ void __backup_server_command_handling()
 
             if(__client_unknown_create(parameter, username, __counter_client_port, port) < 0)
             {
-                log_debug("server","Could not create client");
+                log_debug("server", "Could not create client");
             }
 
             __client_print_list();
@@ -742,7 +729,7 @@ int server_setup(int port)
 		return -1;
 	}
 
-    log_info("server","Server is socket %d", __server_entity.socket_instance);
+    log_info("server", "Server is socket %d", __server_entity.socket_instance);
 
 	__counter_client_port = port;
 	__server_wait_connection();

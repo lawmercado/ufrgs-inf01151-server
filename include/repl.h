@@ -1,7 +1,6 @@
 #ifndef __REPL_H__
 #define __REPL_H__
 
-#include <limits.h>
 #include "comm.h"
 
 #define REPL_MAX_SERVER 3
@@ -10,7 +9,7 @@ struct repl_server {
     int id;
     int primary;
     int down;
-    char host[HOST_NAME_MAX];
+    char host[COMM_HOST_LENGTH];
     struct comm_entity entity;
     struct comm_entity replication_entity;
 };
@@ -23,7 +22,7 @@ int repl_is_primary(int id);
 
 int repl_backup_set_is_primary_down();
 
-int repl_get_primary_address(char host[HOST_NAME_MAX]);
+int repl_get_primary_address(char host[COMM_HOST_LENGTH]);
 
 int repl_primary_send_ping();
 

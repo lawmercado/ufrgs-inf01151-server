@@ -103,7 +103,7 @@ int repl_backup_set_is_primary_down()
     return -1;
 }
 
-int repl_get_primary_address(char host[HOST_NAME_MAX])
+int repl_get_primary_address(char host[COMM_HOST_LENGTH])
 {
     pthread_mutex_lock(&__repl_handling_mutex);
 

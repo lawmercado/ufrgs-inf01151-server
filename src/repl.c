@@ -53,6 +53,7 @@ int repl_load_servers()
         servers[idx].id = id;
         servers[idx].primary = type == 1;
         servers[idx].down = 0;
+        strcpy(servers[idx].host, host);
         servers[idx].entity.idx_buffer = -1;
         servers[idx].entity.socket_instance = utils_create_socket();
         utils_init_sockaddr_to_host(&(servers[idx].entity.sockaddr), port, host);
@@ -102,7 +103,7 @@ int repl_backup_set_is_primary_down()
     return -1;
 }
 
-int repl_get_primary_address(char ip[INET_ADDRSTRLEN])
+int repl_get_primary_address(char host[HOST_NAME_MAX])
 {
     pthread_mutex_lock(&__repl_handling_mutex);
 
@@ -112,7 +113,7 @@ int repl_get_primary_address(char ip[INET_ADDRSTRLEN])
     {
         if(servers[i].primary)
         {
-            utils_get_ip(&(servers[i].entity.sockaddr), ip);
+            strcpy(host, servers[i].host);            
             
             pthread_mutex_unlock(&__repl_handling_mutex);
 

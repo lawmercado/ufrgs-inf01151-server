@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
 #include "comm.h"
 #include "log.h"
 #include "utils.h"
@@ -514,11 +515,11 @@ void __primary_server_command_handling()
 int __client_send_reconnection(struct comm_client *client)
 {
     char command[COMM_PPAYLOAD_LENGTH] = "";
-    char ip[INET_ADDRSTRLEN] = "";
+    char host[HOST_NAME_MAX] = "";
 
-    repl_get_primary_address(ip);
+    repl_get_primary_address(host);
 
-    sprintf(command, "recon %s %d", ip, client->port);
+    sprintf(command, "recon %s %d", host, client->port);
 
     log_info("server", "Sending recon command %s!", command);
 

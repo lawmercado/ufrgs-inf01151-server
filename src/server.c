@@ -487,6 +487,14 @@ void __primary_server_command_handling()
 
             getnameinfo((struct sockaddr *)&(__server_entity.sockaddr), sizeof(__server_entity.sockaddr), address, COMM_HOST_LENGTH, NULL, 0, 0);
             
+            if(strcmp(address, "localhost") == 0)
+            {
+                gethostname(address, COMM_HOST_LENGTH);
+            }
+            
+            fprintf(stderr, "BATATA %s\n", address);              
+            
+
             if(__client_create(address, username, __counter_client_port, port) < 0)
             {
                 log_debug("server", "Could not log user");
